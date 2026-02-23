@@ -1,0 +1,507 @@
+{
+  "name": "Content Rewards Pipeline v6",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Content Rewards Clip Request",
+        "formFields": {
+          "values": [
+            {"fieldType": "text", "fieldLabel": "YouTube URL", "name": "youtube_url", "requiredField": true},
+            {"fieldType": "dropdown", "fieldLabel": "Campaign", "name": "campaign_name", "options": ["on_the_margin", "samuel_lee_md", "ddurz", "tarteel"], "requiredField": true},
+            {"fieldType": "text", "fieldLabel": "Adam Notes", "name": "adam_notes"},
+            {"fieldType": "text", "fieldLabel": "Episode Title", "name": "episode_title"},
+            {"fieldType": "number", "fieldLabel": "Episode Number", "name": "episode_number"},
+            {"fieldType": "text", "fieldLabel": "Account to Post From", "name": "account_to_post_from"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "form-trigger",
+      "name": "1. Form Trigger",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.1,
+      "position": [0, 300],
+      "webhookId": "content-rewards-form-v6"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "base": {"__rl": true, "value": "{{$env.AIRTABLE_APP_ID}}", "mode": "id"},
+        "table": {"__rl": true, "value": "tblCAMPAIGNS", "mode": "id"},
+        "filters": {"filterByFormula": "={name}='{{ $json.campaign_name }}'", "maxRecords": 1},
+        "options": {}
+      },
+      "id": "airtable-campaign",
+      "name": "2. Get Campaign Config",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 3,
+      "position": [220, 300],
+      "credentials": {"airtableTokenApi": {"id": "[REPLACE]", "name": "Airtable"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract campaign config from Airtable\nconst record = $input.first().json;\nconst fields = record.fields || {};\n\n// Parse hashtags and mentions from comma-separated strings\nconst parseList = (str) => str ? str.split(',').map(s => s.trim()).filter(Boolean) : [];\n\nreturn [{\n  json: {\n    ...$input.first().json,\n    campaign_config: {\n      platform: fields.platform || \"tiktok\",\n      music_category: fields.music_category || \"upbeat\",\n      caption_style: fields.caption_style || \"conversational\",\n      required_hashtags: parseList(fields.required_hashtags),\n      required_mentions: parseList(fields.required_mentions),\n      clip_length_min: fields.clip_length_min || 30,\n      clip_length_max: fields.clip_length_max || 90,\n      hook_style: fields.hook_style || \"controversy\",\n      tier1_requirement: fields.tier1_requirement || \"\",\n      caption_instructions: fields.caption_instructions || \"\"\n    }\n  }\n}];"
+      },
+      "id": "parse-campaign-config",
+      "name": "3. Parse Campaign Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.supadata.ai/v1/youtube/transcript",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "url", "value": "{{ $json.youtube_url }}"},
+            {"name": "word_level", "value": true}
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "x-api-key", "value": "{{ $env.SUPADATA_API_KEY }}"}]},
+        "options": {"timeout": 60000}
+      },
+      "id": "supadata-transcript",
+      "name": "4. Supadata Transcript",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract transcript from Supadata response\nconst resp = $input.first().json;\n\n// Handle multiple possible response formats\nlet transcriptText = '';\nlet wordLevelData = [];\n\nif (resp.data?.transcript) {\n  // Format: { data: { transcript: [...] } }\n  wordLevelData = resp.data.transcript;\n} else if (resp.transcript) {\n  // Format: { transcript: [...] }\n  wordLevelData = resp.transcript;\n} else if (Array.isArray(resp)) {\n  // Format: [...] (direct array)\n  wordLevelData = resp;\n}\n\n// Convert word-level data to formatted transcript text\nif (wordLevelData.length > 0) {\n  if (typeof wordLevelData[0] === 'string') {\n    // Already formatted as text\n    transcriptText = wordLevelData.join('\\n');\n  } else {\n    // Word-level objects with timestamps\n    transcriptText = wordLevelData.map(w => \n      `[${formatTime(w.start || w.startMs || 0)}] ${w.text || w.word || ''}`\n    ).join('\\n');\n  }\n}\n\nfunction formatTime(ms) {\n  const totalSeconds = Math.floor(ms / 1000);\n  const minutes = Math.floor(totalSeconds / 60);\n  const seconds = totalSeconds % 60;\n  return `${minutes}:${seconds.toString().padStart(2, '0')}`;\n}\n\nreturn [{\n  json: {\n    ...$input.first().json,\n    transcript: transcriptText,\n    word_level_data: wordLevelData\n  }\n}];"
+      },
+      "id": "parse-transcript",
+      "name": "5. Parse Transcript",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build FULL Prompt 1 from clip-system-prompts.md\nconst input = $input.first().json;\nconst transcript = input.transcript || \"\";\nconst config = input.campaign_config || {};\n\n// Full Prompt 1 from clip-system-prompts.md\nconst prompt = `<system_prompt>\n\nYOU ARE AN ELITE SHORT-FORM CONTENT STRATEGIST AND ATTENTION ENGINEER, RECOGNIZED FOR EXTRACTING MAXIMUM-VIRALITY CLIPS FROM LONG-FORM VIDEO TRANSCRIPTS. YOU HAVE DEEP EXPERTISE IN SCROLL-STOPPING PSYCHOLOGY, PLATFORM ALGORITHM MECHANICS, AND HOOK ARCHITECTURE ACROSS TIKTOK, INSTAGRAM REELS, AND YOUTUBE SHORTS.\n\nYOUR SOLE MISSION: Analyze the provided transcript and identify the timestamp ranges that will generate the highest view counts when clipped and posted as short-form vertical video. You do not care about production quality, aesthetics, or brand alignment. You care exclusively about retention at the 6-second gate, completion rate, and re-watch behavior.\n\n---\n\n### CONTEXT ###\n\nTHE 6-SECOND GATE — THE ENTIRE GAME:\n\nData from 14,000 clips across Content Rewards campaigns reveals a single decisive variable:\n\n- Clips where 70%+ of viewers made it past second 6 averaged 120,000 views\n- Clips where under 40% made it past second 6 averaged 1,800 views\n- Same creators. Same campaigns. Same platforms. Only the opening differed.\n\nHOW THE ALGORITHM ACTUALLY WORKS: When you post a clip, the platform shows it to a test batch of 200-500 people and measures one thing — did they keep watching past 6 seconds? If retention is high, the clip gets pushed to a larger batch, then larger, then larger. Every distribution tier is gated by early retention. The entire game is won or lost before the viewer knows what the video is about.\n\nThis means: an average clip with an incredible first 6 seconds will outperform an incredible clip with an average opening every single time.\n\nTHE THREE ELEMENTS THAT WIN THE 6-SECOND GATE:\n1. PATTERN INTERRUPT — Something visually unexpected or aurally jarring in the first moment. Motion, contrast, confusion, a claim that contradicts expectation. Anything that makes the thumb stop. This is also served by the hook clip (3-second pattern interrupt from elsewhere in the video that plays before the main clip).\n2. OPEN LOOP — A statement in the first 6 seconds that NEEDS resolution. The brain cannot scroll past an unresolved question. \"This got me fired from 3 companies\" cannot be closed without watching. The statement must create psychological tension that only the rest of the clip can release.\n3. SPECIFIC NUMBER OR CREDIBLE DETAIL — \"$14,999 in one week\" locks the brain in 10x harder than \"a lot of money.\" Specificity signals credibility. The brain treats specific numbers as evidence, not claim.\n\nAll three elements must be present or engineered into the first 6 seconds of every clip you identify.\n\n---\n\nPLATFORM INTELLIGENCE:\n\nTIKTOK: Completion rate is the #1 distribution signal. First 0-3 seconds determine whether the algorithm pushes the clip. Qualified views (5+ seconds) required for monetization. Pattern interrupts — mid-sentence entries, bold claims, unexpected starts — beat polished intros every time. Controversy and replies are the highest-weight engagement signals.\n\nINSTAGRAM REELS: Saves and shares outweigh likes in algorithmic weight. Hook must land in the first 1-2 seconds. Content people send to friends outperforms content people double-tap.\n\nYOUTUBE SHORTS: Watch time percentage is the primary rank signal. Curiosity gaps that tease a resolution force viewers to the end.\n\nHOOK PSYCHOLOGY: A hook works when the viewer's brain generates a question they NEED answered. Best hooks drop the viewer mid-action, mid-conflict, or mid-revelation. Emotional charge in the first 3 seconds doubles completion rate. Specificity beats generality: \"$2M lost in 48 hours\" > \"we had a big problem.\" Curiosity gap formula: state something unexpected → withhold the resolution → force the viewer to watch.\n\nTRIGGER TYPES THAT STOP THE SCROLL:\n- Controversy: a claim that contradicts common belief\n- Confession: \"I was wrong\", \"nobody told me this\", \"I made a mistake\"\n- Revelation: information the viewer didn't know but now can't unknow\n- Conflict: tension between two ideas, people, or outcomes\n- Extreme Claim: a number, result, or statement that sounds impossible\n- Mid-Sentence Entry: drops viewer into the middle of a thought\n- Stakes Moment: something important is on the line\n- Punchline: a payoff that lands hard after a setup\n\n---\n\n### INSTRUCTIONS ###\n\nExecute these 5 stages fully before producing output:\n\n1. SCAN the full transcript for Emotional Spike Moments using the trigger types above.\n\n2. SCORE each flagged moment on Hook Quality (1-10):\n   - Starts mid-action or mid-thought: +2\n   - Creates an unanswered question in the first 5 words: +2\n   - Contains emotional charge: +2\n   - Is niche-specific: +2\n   - Is specific not generic: +2\n   Only clips scoring 6+ proceed to Stage 3.\n\n3. EVALUATE THE 6-SECOND GATE for each passing clip. Explicitly assess:\n   - PATTERN INTERRUPT: Does the opening moment create visual or conceptual disruption? (Yes/Partial/No)\n   - OPEN LOOP: Does a statement in the first 6 seconds create an unresolved tension that forces continued watching? (Yes/Partial/No)\n   - SPECIFIC DETAIL: Is there a number, name, dollar figure, or concrete claim in the first 6 seconds? (Yes/Partial/No)\n   If all three are \"No\" or \"Partial\", identify the earliest moment in the transcript where these elements appear and adjust timestamp_start to begin there instead. If no adjustment can achieve all three, flag the clip as \"6-SECOND RISK\" in risk_flags.\n   Also identify hook_clip_timestamp: a separate 3-second moment from elsewhere in the video that could serve as a visual pattern interrupt played before the main clip begins.\n\n4. MAP the Retention Arc: [HOOK → TENSION BUILD → PAYOFF]\n   Adjust timestamps until all three elements exist within the clip.\n   Discard clips that cannot form a complete arc.\n\n5. RANK and OUTPUT top 5-10 clips by hook score.\n\n---\n\n### CHAIN OF THOUGHT ###\n\nFor each candidate clip:\n1. UNDERSTAND — What is actually happening in this moment?\n2. BASICS — What single emotion does it trigger in a first-time viewer?\n3. BREAK DOWN — Does this moment have a hook? Tension? Payoff? Where exactly?\n4. ANALYZE — Apply the +2 scoring system. Is the opening line strong enough?\n5. SIX-SECOND AUDIT — Does the opening 6 seconds contain a pattern interrupt, an open loop, and a specific detail? If not, can the timestamp be adjusted to start at a moment that does?\n6. BUILD — Finalize timestamps. Adjust for strongest hook and cleanest payoff. Identify hook_clip_timestamp.\n7. EDGE CASES — Does this clip make sense without watching the full video?\n8. FINAL ANSWER — Assign score. Include or discard. Rank it.\n\n---\n\n### WHAT NOT TO DO ###\n\n- NEVER score above 6 if the clip requires prior context to be understood\n- NEVER start a clip at a natural pause or sentence beginning — always mid-thought\n- NEVER output a clip where the payoff falls outside the timestamp range\n- DO NOT include clips under 15 seconds or over 90 seconds\n- AVOID flagging moments that are purely informational with no emotional charge\n- NEVER output fewer than 5 clips unless the transcript genuinely has fewer viable moments\n- DO NOT overlap timestamp ranges between clips\n- NEVER pass a clip through Stage 3 without completing the 6-second gate evaluation\n- DO NOT ignore the hook_clip_timestamp field — it is required for every clip\n\n---\n\n### EXPECTED OUTPUT ###\n\nFORMAT: JSON\nOutput this exact schema:\n\n{\n  \"campaign\": \"[Campaign Name]\",\n  \"transcript_analyzed\": true,\n  \"total_clips_identified\": [number],\n  \"clips\": [\n    {\n      \"rank\": 1,\n      \"hook_score\": 9,\n      \"timestamp_start\": \"14:32\",\n      \"timestamp_end\": \"15:18\",\n      \"duration_seconds\": 46,\n      \"trigger_type\": \"Extreme Claim + Revelation\",\n      \"opening_line\": \"Exact first sentence of the clip verbatim from transcript\",\n      \"hook_clip_timestamp\": \"22:14\",\n      \"hook_clip_description\": \"Speaker's jaw drop reaction — 3 seconds of visual disruption before main clip plays\",\n      \"six_second_gate\": {\n        \"pattern_interrupt\": \"Yes — opens mid-sentence on a dollar figure the viewer has no context for\",\n        \"open_loop\": \"Yes — '$2M gone in 48 hours' creates immediate unresolved tension\",\n        \"specific_detail\": \"Yes — '$2M' and '48 hours' are both concrete and credible\",\n        \"gate_verdict\": \"PASS — all three present in first 4 seconds\"\n      },\n      \"why_it_hits\": \"1-2 sentence psychological explanation\",\n      \"retention_arc\": {\n        \"hook\": {\"timestamp\": \"14:32\", \"description\": \"What the hook is\"},\n        \"tension\": {\"timestamp\": \"14:38\", \"description\": \"What builds tension\"},\n        \"payoff\": {\"timestamp\": \"15:05\", \"description\": \"What the payoff is\"}\n      },\n      \"platform_fit\": \"TikTok primary — reason why\",\n      \"risk_flags\": \"None\"\n    }\n  ]\n}\n\n---\n\n### USER INPUT FORMAT ###\n\nTRANSCRIPT:\n${transcript}\n\nCAMPAIGN CONTEXT:\n- Campaign Name: ${input.campaign_name || 'Unknown'}\n- Platform Target: ${config.platform || 'TikTok'}\n- Niche: Finance/Podcast\n- Target Audience: Content consumers interested in the campaign topic\n- Clip Length Target: ${config.clip_length_min || 30}-${config.clip_length_max || 90} seconds\n- Special Rules: ${config.caption_instructions || 'None'}\n- Required Hashtags: ${(config.required_hashtags || []).join(', ')}\n- Required Mentions: ${(config.required_mentions || []).join(', ')}\n\n</system_prompt>`;\n\nreturn [{\n  json: { ...input, prompt_1: prompt }\n}];"
+      },
+      "id": "build-prompt-one",
+      "name": "6. Build Prompt 1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "operation": "chat",
+        "model": "claude-sonnet-4-20250514",
+        "messages": {"messages": [{"role": "user", "content": "={{ $json.prompt_1 }}"]},
+        "options": {"timeout": 180}
+      },
+      "id": "claude-find-clips",
+      "name": "7. Claude - Find Viral Clips",
+      "type": "n8n-nodes-base.anthropic",
+      "typeVersion": 1,
+      "position": [1320, 300],
+      "credentials": {"anthropicApi": {"id": "[REPLACE]", "name": "Anthropic"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Claude response - handle multiple JSON formats\nconst resp = $input.first().json;\n\n// Extract content from Claude response\nlet content = '';\nif (resp.message?.content) {\n  // Anthropic format\n  const textBlock = resp.message.content.find(b => b.type === 'text');\n  content = textBlock?.text || '';\n} else if (resp.text) {\n  content = resp.text;\n} else if (typeof resp === 'string') {\n  content = resp;\n}\n\n// Try to extract JSON array from content\nlet clips = [];\n\n// Try 1: Direct array match\nconst directMatch = content.match(/\\[[\\s\\S]*\\]/);\nif (directMatch) {\n  try {\n    const parsed = JSON.parse(directMatch[0]);\n    if (Array.isArray(parsed)) clips = parsed;\n  } catch {}\n}\n\n// Try 2: Look for JSON object with clips array\nif (clips.length === 0) {\n  const objMatch = content.match(/\\{[\\s\\S]*\"clips\"[\\s\\S]*\\}/);\n  if (objMatch) {\n    try {\n      const parsed = JSON.parse(objMatch[0]);\n      clips = parsed.clips || [];\n    } catch {}\n  }\n}\n\n// Format clips for Slack display\nconst formatClip = (c, i) => {\n  return `${i+1}. \"${c.opening_line?.substring(0, 80)}...\"\\n   Score: ${c.hook_score}/10 | ${c.trigger_type}\\n   ${c.timestamp_start} - ${c.timestamp_end} (${c.duration_seconds}s)\\n   Hook: ${c.hook_clip_timestamp}`;\n};\n\nconst formattedClips = clips.map(formatClip).join('\\n\\n');\n\nreturn [{\n  json: {\n    ...$input.first().json,\n    clips: clips,\n    formattedClips: formattedClips,\n    clipCount: clips.length\n  }\n}];"
+      },
+      "id": "parse-clip-response",
+      "name": "8. Parse Clips",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate unique approval form URL\nconst workflowId = 'content-rewards-approval-' + Date.now();\nconst formUrl = 'https://your-n8n-instance.com/webhook/form/' + workflowId;\n\n// Build Slack message with approval form\nconst input = $input.first().json;\nconst clipCount = input.clipCount || 0;\n\nreturn [{\n  json: {\n    ...input,\n    approvalFormUrl: formUrl,\n    approvalWorkflowId: workflowId,\n    slackMessage: `🎬 *Clip Selection Required*\n\n*Campaign:* ${input.campaign_name}\n*Episode:* ${input.episode_title || 'N/A'}\n\n*Clips Found:* ${clipCount}\n\n_Use the form below to select clips for processing:_\n${formUrl}`\n  }\n}];"
+      },
+      "id": "prepare-clip-approval",
+      "name": "9. Prepare Clip Approval",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1760, 300]
+    },
+    {
+      "parameters": {
+        "channel": "{{$json.campaign_name}}",
+        "text": "={{ $json.slackMessage }}",
+        "additionalFields": {}
+      },
+      "id": "slack-clip-select",
+      "name": "10. Slack - Select Clips",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 3,
+      "position": [1980, 300],
+      "credentials": {"slackBotTokenApi": {"id": "[REPLACE]", "name": "Slack Bot"}}
+    },
+    {
+      "parameters": {
+        "amount": 30,
+        "unit": "minutes",
+        "resume": "form",
+        "formLabel": "Select clips to process (comma-separated numbers)"
+      },
+      "id": "wait-clip-response",
+      "name": "11. Wait for Clip Selection",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [2200, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse form submission for clip selection\nconst formData = $input.first().json;\nconst clips = $input.first().json.clips || [];\n\n// Extract selection from form response\nconst selection = formData.selected_clips || formData.selection || '';\n\n// Parse comma-separated numbers\nconst nums = selection.split(/[,;\\s]+/)\n  .map(n => parseInt(n.trim()) - 1)\n  .filter(n => !isNaN(n) && n >= 0 && n < clips.length);\n\nconst selectedClips = nums.map(i => clips[i]).filter(Boolean);\n\n// If no valid selection, use first clip\nconst finalClips = selectedClips.length > 0 ? selectedClips : [clips[0]];\n\nreturn [{\n  json: {\n    ...$input.first().json,\n    selectedClips: finalClips,\n    selectedCount: finalClips.length\n  }\n}];"
+      },
+      "id": "parse-clip-selection",
+      "name": "12. Parse Clip Selection",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2420, 300]
+    },
+    {
+      "parameters": {
+        "batchSize": 1
+      },
+      "id": "loop-over-clips",
+      "name": "13. Loop Over Clips",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [2640, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build FULL Prompt 2 from clip-system-prompts.md\nconst clip = $input.item.json;\nconst config = $input.first().json.campaign_config || {};\nconst campaign = $input.first().json.campaign_name || 'unknown';\n\n// Format hashtags and mentions\nconst hashtags = (config.required_hashtags || []).join(' ');\nconst mentions = (config.required_mentions || []).join(' ');\nconst campaignTag = `${hashtags} ${mentions}`.trim();\n\nconst prompt = `<system_prompt>\n\nYOU ARE AN ELITE SHORT-FORM CAPTION STRATEGIST, SPECIALIZED IN WRITING SCROLL-STOPPING CAPTIONS FOR TIKTOK, INSTAGRAM REELS, AND YOUTUBE SHORTS THAT MAXIMIZE VIEW COUNTS AND PLATFORM DISTRIBUTION FOR CONTENT REWARDS CAMPAIGNS.\n\nYOUR SOLE MISSION: Take a clip's opening line, trigger type, platform, and campaign rules, and generate 3 caption variants plus 5 hook overlay variations optimized for maximum algorithmic reach and viewer retention past the 6-second gate. You understand that a caption does two things: it primes the algorithm with keywords, and it hooks the human eye before they even press play. The hook overlay text on screen during the first 6 seconds is equally critical — it must function as an open loop that the clip's content resolves.\n\n---\n\n### CONTEXT ###\n\nTHE 6-SECOND GATE — YOUR HOOK OVERLAY MUST WIN THIS:\n\nData from 14,000 clips proves that retention past second 6 is the single variable separating 120k-view clips from 1.8k-view clips. The hook overlay text — the words displayed on screen in the first 2-6 seconds — is your primary lever for winning this gate.\n\nEvery hook overlay you write must contain at minimum one of these three elements:\n1. OPEN LOOP — A statement that creates psychological tension requiring resolution. \"This got me banned from 3 platforms\" forces the brain to stay. The video resolves the loop.\n2. SPECIFIC NUMBER — \"$14,999 in one week\" locks the brain 10x harder than \"a lot of money.\" Specificity signals credibility.\n3. PATTERN INTERRUPT — A claim that contradicts what the viewer already believes, forcing them to re-evaluate.\n\nTop performers test 5 different hook overlay approaches on the same clip body. The same video after second 6, completely different performance based on the opening text. You will generate all 5 variations every time.\n\nHOOK OVERLAY VARIATION TYPES:\n- TEXT CLAIM: A bold statement or number displayed on screen. \"I made $200 today posting videos I didn't film.\"\n- PROOF SIGNAL: Reference to visible evidence in the clip. \"Watch what happens at $1,247...\"\n- CONTRADICTION: Directly contradicts a common belief. \"Your financial advisor is hiding this from you.\"\n- EMOTION TRIGGER: Leads with feeling before logic. \"I almost quit before this happened.\"\n- SOCIAL PROOF: Leads with someone else's result. \"500 people tested this. Here's what happened.\"\n\n---\n\nHOW CAPTIONS AFFECT DISTRIBUTION:\n\nTIKTOK: The algorithm reads captions for topic classification. Captions that contain high-search keywords in the niche push the clip to the right audience. The caption also appears as the first thing a viewer reads before pressing play — it must create urgency or curiosity that makes them tap.\n\nINSTAGRAM REELS: First 125 characters appear before the \"more\" cutoff on mobile. Everything important must land in those 125 characters. Hashtags on Reels affect discoverability but should feel natural, not spammy. 3-5 targeted hashtags outperform 20 generic ones.\n\nYOUTUBE SHORTS: Captions function as titles. They should be search-optimized, specific, and promise a payoff. YouTube users are more intent-driven than TikTok — they're looking for something. Your caption should tell them they found it.\n\nCAPTION PSYCHOLOGY:\n- Member POV format: viewer is the subject, not the speaker. \"You've been lied to about X\" not \"He explains why X is wrong\"\n- Specificity over generality: \"You lost $40K without knowing it\" beats \"This could cost you\"\n- Curiosity gap: state something unexpected, withhold the full explanation — the video fills the gap\n- Emotional charge words: \"nobody told you\", \"they don't want you to know\", \"you've been doing this wrong\", \"this changes everything\"\n- Numbers and timeframes increase credibility and stop the scroll\n- Under 150 characters for the core caption — everything after is hashtags and tags\n\nCAPTION FORMULA OPTIONS:\n- Curiosity Gap: \"[Unexpected outcome] and [authority/source] knew all along 😳\"\n- Stakes Formula: \"You [did X] without knowing [consequence] 😭🔥\"\n- Contradiction Hook: \"Everyone says [X]. [Guest/speaker] just proved it's wrong.\"\n- Revelation Formula: \"The reason [common problem] is [unexpected cause] — and nobody talks about it\"\n- Pattern Interrupt: \"[Specific shocking claim]. This clip explains everything.\"\n\n---\n\n### INSTRUCTIONS ###\n\nFor each clip provided, generate:\n\n3 CAPTION VARIANTS optimized for different algorithmic strategies:\n\nVARIANT A — CURIOSITY GAP\nBuild maximum open loop. Viewer must watch to close the question.\n\nVARIANT B — STAKES / EMOTIONAL\nMake the viewer feel like they're losing something by not watching. Use loss aversion.\n\nVARIANT C — DIRECT KEYWORD\nLess creative, more searchable. Targets viewers actively searching for content in this niche. Best for YouTube Shorts and search-driven platforms.\n\n5 HOOK OVERLAY VARIATIONS (test these against each other on the same clip body):\n\nOVERLAY 1 — TEXT CLAIM\nA bold statement or specific number displayed on screen in the first 6 seconds. Creates an open loop.\n\nOVERLAY 2 — PROOF SIGNAL\nReferences something visible or about to happen in the clip. Implies evidence is coming.\n\nOVERLAY 3 — CONTRADICTION\nDirectly contradicts a belief the target viewer holds. Forces cognitive re-evaluation.\n\nOVERLAY 4 — EMOTION TRIGGER\nLeads with feeling, not information. Drops the viewer into an emotional state before the logic arrives. \"I almost quit before this happened.\" Forces empathy before the brain can scroll.\n\nOVERLAY 5 — SOCIAL PROOF\nLeads with a result someone else achieved. \"500 people tested this. Here's what happened.\" Leverages herd behavior — if others got the result, the viewer needs to know how.\n\nFor each caption variant, also include:\n- The hashtag set (3-5 tags, niche-specific, not generic)\n- The required campaign tag and mention (from campaign rules)\n- The recommended hook overlay variation for this caption variant\n\n---\n\n### WHAT NOT TO DO ###\n\n- NEVER write captions in third person about the speaker (\"He says...\", \"She explains...\")\n- NEVER use generic captions (\"This is crazy 😱\", \"You need to see this\", \"OMG 😳\")\n- NEVER write captions longer than 150 characters before hashtags\n- DO NOT use more than 5 hashtags — quality over quantity\n- NEVER write hook overlay text longer than 7 words — it must be readable in 2 seconds\n- NEVER write a hook overlay that is a closed statement — every overlay must create a question or unresolved tension\n- AVOID clickbait that the clip doesn't deliver on — this tanks completion rate and kills the 6-second gate\n- DO NOT forget to include the campaign-required hashtag and @ mention\n- NEVER use the same opening word across all 3 caption variants or all 5 overlay variations\n- DO NOT output fewer than 5 hook overlays — all 5 variations are required every time\n\n---\n\n### EXPECTED OUTPUT ###\n\nFORMAT: JSON\nOutput this exact schema:\n\n{\n  \"clip_rank\": 1,\n  \"opening_line\": \"Exact first line of the clip\",\n  \"trigger_type\": \"From Prompt 1 output\",\n  \"platform_primary\": \"TikTok\",\n  \"hook_overlays\": {\n    \"overlay_1_text_claim\": {\n      \"text\": \"3-7 word on-screen text\",\n      \"open_loop_created\": \"What question this forces the viewer to answer by watching\"\n    },\n    \"overlay_2_proof_signal\": {\n      \"text\": \"3-7 word on-screen text\",\n      \"open_loop_created\": \"What evidence this implies is coming in the clip\"\n    },\n    \"overlay_3_contradiction\": {\n      \"text\": \"3-7 word on-screen text\",\n      \"open_loop_created\": \"What belief this contradicts and forces re-evaluation of\"\n    },\n    \"overlay_4_emotion_trigger\": {\n      \"text\": \"3-7 word on-screen text\",\n      \"open_loop_created\": \"What emotional state this drops the viewer into before the logic arrives\"\n    },\n    \"overlay_5_social_proof\": {\n      \"text\": \"3-7 word on-screen text\",\n      \"open_loop_created\": \"What herd behavior this activates and what result the viewer now needs to know how to get\"\n    }\n  },\n  \"captions\": {\n    \"variant_a\": {\n      \"type\": \"Curiosity Gap\",\n      \"caption\": \"Full caption text under 150 chars\",\n      \"recommended_overlay\": \"overlay_1_text_claim\",\n      \"hashtags\": [\"#tag1\", \"#tag2\", \"#tag3\"],\n      \"campaign_tag\": \"#campaignname @campaignhandle\"\n    },\n    \"variant_b\": {\n      \"type\": \"Stakes / Emotional\",\n      \"caption\": \"Full caption text under 150 chars\",\n      \"recommended_overlay\": \"overlay_2_proof_signal\",\n      \"hashtags\": [\"#tag1\", \"#tag2\", \"#tag3\"],\n      \"campaign_tag\": \"#campaignname @campaignhandle\"\n    },\n    \"variant_c\": {\n      \"type\": \"Direct Keyword\",\n      \"caption\": \"Full caption text under 150 chars\",\n      \"recommended_overlay\": \"overlay_3_contradiction\",\n      \"hashtags\": [\"#tag1\", \"#tag2\", \"#tag3\"],\n      \"campaign_tag\": \"#campaignname @campaignhandle\"\n    }\n  },\n  \"recommended_combination\": {\n    \"tiktok\": {\"caption_variant\": \"A\", \"hook_overlay\": \"overlay_1_text_claim\", \"reason\": \"Why this wins the 6-second gate on TikTok specifically\"},\n    \"instagram\": {\"caption_variant\": \"B\", \"hook_overlay\": \"overlay_4_emotion_trigger\", \"reason\": \"Why this wins on Instagram specifically\"},\n    \"youtube_shorts\": {\"caption_variant\": \"C\", \"hook_overlay\": \"overlay_2_proof_signal\", \"reason\": \"Why this wins on YouTube Shorts specifically\"}\n  }\n}\n\n---\n\n### USER INPUT FORMAT ###\n\nCLIP DATA (from Prompt 1 output):\n- Rank: ${clip.rank}\n- Opening Line: ${clip.opening_line}\n- Trigger Type: ${clip.trigger_type}\n- Why It Hits: ${clip.why_it_hits}\n- Six Second Gate: ${JSON.stringify(clip.six_second_gate)}\n- Platform Primary: ${config.platform || 'TikTok'}\n- Target Audience: Content consumers\n- Hook Timestamp: ${clip.hook_clip_timestamp}\n\nCAMPAIGN RULES:\n- Campaign: ${campaign}\n- Required Hashtags: ${hashtags}\n- Required Mentions: ${mentions}\n- Caption Style Note: ${config.caption_style}\n\n</system_prompt>`;\n\nreturn [{\n  json: {\n    ...clip,\n    prompt_2: prompt,\n    campaign_tag: campaignTag\n  }\n}];"
+      },
+      "id": "build-prompt-two",
+      "name": "14. Build Prompt 2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2860, 300]
+    },
+    {
+      "parameters": {
+        "operation": "chat",
+        "model": "claude-haiku-4-5-20251001",
+        "messages": {"messages": [{"role": "user", "content": "={{ $json.prompt_2 }}"]},
+        "options": {"timeout": 60}
+      },
+      "id": "claude-generate-captions",
+      "name": "15. Claude - Generate Captions",
+      "type": "n8n-nodes-base.anthropic",
+      "typeVersion": 1,
+      "position": [3080, 300],
+      "credentials": {"anthropicApi": {"id": "[REPLACE]", "name": "Anthropic"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Claude caption response\nconst resp = $input.first().json;\n\n// Extract content\nlet content = '';\nif (resp.message?.content) {\n  const textBlock = resp.message.content.find(b => b.type === 'text');\n  content = textBlock?.text || '';\n} else if (resp.text) {\n  content = resp.text;\n}\n\n// Extract JSON\nlet captionData = null;\n\n// Try direct JSON\nconst directMatch = content.match(/\\{[\\s\\S]*\\}/);\nif (directMatch) {\n  try {\n    captionData = JSON.parse(directMatch[0]);\n  } catch {}\n}\n\n// Extract nested in code blocks\nif (!captionData) {\n  const codeMatch = content.match(/```(?:json)?\\s*([\\s\\S]*?)```/);\n  if (codeMatch) {\n    try {\n      captionData = JSON.parse(codeMatch[1]);\n    } catch {}\n  }\n}\n\nconst input = $input.first().json;\n\nreturn [{\n  json: {\n    ...input,\n    captionData: captionData,\n    recommendedCaption: captionData?.recommended_combination?.tiktok || {},\n    hookOverlay: captionData?.hook_overlays || {}\n  }\n}];"
+      },
+      "id": "parse-caption-response",
+      "name": "16. Parse Captions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3300, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $env.API_BASE_URL }}/media/trim",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "inputUrl", "value": "{{ $json.youtube_url }}"},
+            {"name": "startTime", "value": "{{ $json.hook_clip_timestamp }}"},
+            {"name": "endTime", "value": "{{ $json.timestamp_start }}"}
+          ]
+        },
+        "options": {"timeout": 120000}
+      },
+      "id": "trim-hook-clip",
+      "name": "17a. Trim Hook Clip",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3520, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $env.API_BASE_URL }}/media/trim",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "inputUrl", "value": "{{ $json.youtube_url }}"},
+            {"name": "startTime", "value": "{{ $json.timestamp_start }}"},
+            {"name": "endTime", "value": "{{ $json.timestamp_end }}"}
+          ]
+        },
+        "options": {"timeout": 120000}
+      },
+      "id": "trim-main-clip",
+      "name": "17b. Trim Main Clip",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3520, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge hook and main clip results\nconst inputs = $input.all();\n\n// Find hook and main outputs\nlet hookResult = null;\nlet mainResult = null;\n\nfor (const input of inputs) {\n  if (input.json && input.json.success) {\n    if (input.json.hookClipUrl || (input.json.startTime && input.json.duration < 10)) {\n      hookResult = input.json;\n    } else {\n      mainResult = input.json;\n    }\n  }\n}\n\n// Use timestamp comparison as fallback\nif (!hookResult || !mainResult) {\n  for (const input of inputs) {\n    if (input.json && input.json.success) {\n      const duration = input.json.duration || 0;\n      if (duration <= 5) {\n        hookResult = input.json;\n      } else {\n        mainResult = input.json;\n      }\n    }\n  }\n}\n\nconst clipData = $input.first().json;\nconst captionData = clipData.captionData || {};\nconst recommended = captionData.recommended_combination || {};\nconst captions = captionData.captions || {};\nconst overlays = captionData.hook_overlays || {};\n\n// Get recommended values\nconst recCaption = captions[recommended.tiktok?.caption_variant?.toLowerCase() || 'variant_a'] || {};\nconst recOverlay = overlays[recommended.tiktok?.hook_overlay || 'overlay_1_text_claim'] || {};\n\nreturn [{\n  json: {\n    ...clipData,\n    hookClipUrl: hookResult?.outputUrl || hookResult?.url,\n    mainClipUrl: mainResult?.outputUrl || mainResult?.url,\n    captionText: recCaption.caption || '',\n    overlayText: recOverlay.text || '',\n    hashtags: recCaption.hashtags || [],\n    campaignTag: clipData.campaign_tag || ''\n  }\n}];"
+      },
+      "id": "merge-trim-results",
+      "name": "18. Merge Trim Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3740, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build render props for Remotion\nconst input = $input.first().json;\n\nconst renderProps = {\n  composition: \"SocialClip\",\n  inputProps: {\n    hookClipUrl: input.hookClipUrl,\n    mainClipUrl: input.mainClipUrl,\n    captionText: input.captionText,\n    overlayText: input.overlayText,\n    campaignTag: input.campaignTag,\n    campaignName: input.campaign_name,\n    episodeTitle: input.episode_title,\n    episodeNumber: input.episode_number,\n    accountToPost: input.account_to_post_from,\n    adamNotes: input.adam_notes\n  }\n};\n\nreturn [{\n  json: {\n    ...input,\n    renderProps: renderProps\n  }\n}];"
+      },
+      "id": "build-render-props",
+      "name": "19. Build Render Props",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3960, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $env.API_BASE_URL }}/render-with-webhook",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "composition", "value": "={{ $json.renderProps.composition }}"},
+            {"name": "inputProps", "value": "={{ $json.renderProps.inputProps }}"},
+            {"name": "codec", "value": "h264"},
+            {"name": "n8nResumeUrl", "value": "={{ $json.n8nResumeUrl }}"}
+          ]
+        },
+        "options": {"timeout": 30000}
+      },
+      "id": "trigger-render",
+      "name": "20. Trigger Render",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [4180, 300]
+    },
+    {
+      "parameters": {
+        "amount": 5,
+        "unit": "minutes"
+      },
+      "id": "wait-render-complete",
+      "name": "21. Wait for Render",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [4400, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "{{ $env.API_BASE_URL }}/progress/{{ $json.renderId }}",
+        "options": {"timeout": 10000}
+      },
+      "id": "check-render-progress",
+      "name": "22. Check Render Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [4620, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare final approval message\nconst input = $input.first().json;\nconst renderStatus = input;\n\nconst statusEmoji = renderStatus.done ? '✅' : renderStatus.quality ? '⏳' : '❌';\nconst statusText = renderStatus.done ? 'Render Complete' : renderStatus.quality ? 'Still Processing' : 'Render Failed';\n\nconst approvalMessage = `🎬 *Final Review Required*\n\n*Campaign:* ${input.campaign_name}\n*Episode:* ${input.episode_title || 'N/A'}\n*Clip:* \"${input.opening_line?.substring(0, 50)}...\"\n\n*Status:* ${statusEmoji} ${statusText}\n*Output:* ${renderStatus.outputFile || 'N/A'}\n\n_Caption:* ${input.captionText}\n_Overlay:* ${input.overlayText}\n\n_Use form to approve or reject:_\n{{ $json.finalApprovalFormUrl }}`;\n\nreturn [{\n  json: {\n    ...input,\n    approvalMessage: approvalMessage,\n    isComplete: renderStatus.done || false\n  }\n}];"
+      },
+      "id": "prepare-final-review",
+      "name": "23. Prepare Final Review",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [4840, 300]
+    },
+    {
+      "parameters": {
+        "channel": "{{$json.campaign_name}}",
+        "text": "={{ $json.approvalMessage }}",
+        "additionalFields": {}
+      },
+      "id": "slack-final-review",
+      "name": "24. Slack - Final Review",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 3,
+      "position": [5060, 300],
+      "credentials": {"slackBotTokenApi": {"id": "[REPLACE]", "name": "Slack Bot"}}
+    },
+    {
+      "parameters": {
+        "amount": 60,
+        "unit": "minutes",
+        "resume": "form",
+        "formLabel": "Approve or reject this clip (approve/reject)"
+      },
+      "id": "wait-final-approval",
+      "name": "25. Wait Final Approval",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [5280, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse final approval\nconst formData = $input.first().json;\nconst approval = (formData.approval || formData.response || '').toLowerCase().trim();\n\nconst isApproved = approval === 'approve' || approval === 'approved' || approval === 'yes';\n\nreturn [{\n  json: {\n    ...$input.first().json,\n    isApproved: isApproved,\n    approvalTime: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "parse-final-approval",
+      "name": "26. Parse Final Approval",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [5500, 300]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {"__rl": true, "value": "{{$env.AIRTABLE_APP_ID}}", "mode": "id"},
+        "table": {"__rl": true, "value": "tblCLIPS", "mode": "id"},
+        "fieldsToSend": {
+          "fields": [
+            {"field": "name", "value": "{{ $json.episode_title }} - Clip {{ $json.rank }}"},
+            {"field": "youtube_url", "value": "{{ $json.youtube_url }}"},
+            {"field": "campaign", "value": "{{ $json.campaign_name }}"},
+            {"field": "status", "value": "{{ $json.isApproved ? 'approved' : 'rejected' }}"},
+            {"field": "clip_url", "value": "{{ $json.outputFile }}"},
+            {"field": "caption", "value": "{{ $json.captionText }}"},
+            {"field": "overlay_text", "value": "{{ $json.overlayText }}"},
+            {"field": "account_to_post", "value": "{{ $json.account_to_post_from }}"},
+            {"field": "adam_notes", "value": "{{ $json.adam_notes }}"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "airtable-record",
+      "name": "27. Record to Airtable",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 3,
+      "position": [5720, 300],
+      "credentials": {"airtableTokenApi": {"id": "[REPLACE]", "name": "Airtable"}}
+    },
+    {
+      "parameters": {
+        "channel": "{{$json.campaign_name}}",
+        "text": "={{ $json.isApproved ? '✅ Clip approved and recorded!' : '❌ Clip rejected. Will need rework.' }}",
+        "additionalFields": {}
+      },
+      "id": "slack-completion",
+      "name": "28. Slack - Completion",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 3,
+      "position": [5940, 300],
+      "credentials": {"slackBotTokenApi": {"id": "[REPLACE]", "name": "Slack Bot"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "// Continue to next clip or finish\nconst input = $input.first().json;\n\nreturn [{\n  json: {\n    ...input,\n    loopContinue: true\n  }\n}];"
+      },
+      "id": "continue-loop",
+      "name": "29. Continue Loop",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [6160, 300]
+    }
+  ],
+  "connections": {
+    "1. Form Trigger": {
+      "main": [[{"node": "2. Get Campaign Config", "type": "main", "index": 0}]]
+    },
+    "2. Get Campaign Config": {
+      "main": [[{"node": "3. Parse Campaign Config", "type": "main", "index": 0}]]
+    },
+    "3. Parse Campaign Config": {
+      "main": [[{"node": "4. Supadata Transcript", "type": "main", "index": 0}]]
+    },
+    "4. Supadata Transcript": {
+      "main": [[{"node": "5. Parse Transcript", "type": "main", "index": 0}]]
+    },
+    "5. Parse Transcript": {
+      "main": [[{"node": "6. Build Prompt 1", "type": "main", "index": 0}]]
+    },
+    "6. Build Prompt 1": {
+      "main": [[{"node": "7. Claude - Find Viral Clips", "type": "main", "index": 0}]]
+    },
+    "7. Claude - Find Viral Clips": {
+      "main": [[{"node": "8. Parse Clips", "type": "main", "index": 0}]]
+    },
+    "8. Parse Clips": {
+      "main": [[{"node": "9. Prepare Clip Approval", "type": "main", "index": 0}]]
+    },
+    "9. Prepare Clip Approval": {
+      "main": [[{"node": "10. Slack - Select Clips", "type": "main", "index": 0}]]
+    },
+    "10. Slack - Select Clips": {
+      "main": [[{"node": "11. Wait for Clip Selection", "type": "main", "index": 0}]]
+    },
+    "11. Wait for Clip Selection": {
+      "main": [[{"node": "12. Parse Clip Selection", "type": "main", "index": 0}]]
+    },
+    "12. Parse Clip Selection": {
+      "main": [[{"node": "13. Loop Over Clips", "type": "main", "index": 0}]]
+    },
+    "13. Loop Over Clips": {
+      "main": [
+        [{"node": "14. Build Prompt 2", "type": "main", "index": 0}],
+        [{"node": "29. Continue Loop", "type": "main", "index": 0}]
+      ]
+    },
+    "14. Build Prompt 2": {
+      "main": [[{"node": "15. Claude - Generate Captions", "type": "main", "index": 0}]]
+    },
+    "15. Claude - Generate Captions": {
+      "main": [[{"node": "16. Parse Captions", "type": "main", "index": 0}]]
+    },
+    "16. Parse Captions": {
+      "main": [
+        [{"node": "17a. Trim Hook Clip", "type": "main", "index": 0}],
+        [{"node": "17b. Trim Main Clip", "type": "main", "index": 0}]
+      ]
+    },
+    "17a. Trim Hook Clip": {
+      "main": [[{"node": "18. Merge Trim Results", "type": "main", "index": 0}]]
+    },
+    "17b. Trim Main Clip": {
+      "main": [[{"node": "18. Merge Trim Results", "type": "main", "index": 0}]]
+    },
+    "18. Merge Trim Results": {
+      "main": [[{"node": "19. Build Render Props", "type": "main", "index": 0}]]
+    },
+    "19. Build Render Props": {
+      "main": [[{"node": "20. Trigger Render", "type": "main", "index": 0}]]
+    },
+    "20. Trigger Render": {
+      "main": [[{"node": "21. Wait for Render", "type": "main", "index": 0}]]
+    },
+    "21. Wait for Render": {
+      "main": [[{"node": "22. Check Render Status", "type": "main", "index": 0}]]
+    },
+    "22. Check Render Status": {
+      "main": [[{"node": "23. Prepare Final Review", "type": "main", "index": 0}]]
+    },
+    "23. Prepare Final Review": {
+      "main": [[{"node": "24. Slack - Final Review", "type": "main", "index": 0}]]
+    },
+    "24. Slack - Final Review": {
+      "main": [[{"node": "25. Wait Final Approval", "type": "main", "index": 0}]]
+    },
+    "25. Wait Final Approval": {
+      "main": [[{"node": "26. Parse Final Approval", "type": "main", "index": 0}]]
+    },
+    "26. Parse Final Approval": {
+      "main": [[{"node": "27. Record to Airtable", "type": "main", "index": 0}]]
+    },
+    "27. Record to Airtable": {
+      "main": [[{"node": "28. Slack - Completion", "type": "main", "index": 0}]]
+    },
+    "28. Slack - Completion": {
+      "main": [[{"node": "13. Loop Over Clips", "type": "main", "index": 0}]]
+    },
+    "29. Continue Loop": {
+      "main": []
+    }
+  },
+  "settings": {},
+  "tags": []
+}

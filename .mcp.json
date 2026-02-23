@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "synta-mcp": {
+      "type": "http",
+      "url": "https://mcp.synta.io/mcp",
+      "headers": {
+        "Authorization": "Bearer sk-syn-DAit9JKHoYhBOxPbSx2HrL4ZQOmEa9FxPiszqNpy",
+        "X-N8n-Url": "https://adamdrapkin-u57409.vm.elestio.app",
+        "X-N8n-Key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0ZThjYjgwZS1hYzRiLTQ2YzItYWFjMS04ZTAyOGI0YzA4MTciLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwianRpIjoiYzMxMWIyZjMtZmY0MS00MGZhLWFiN2YtNjU5MWE3NTUwZjI5IiwiaWF0IjoxNzcxODAzMDQxfQ.T8hFUaRslfk7s_HSiv6Vwp_EOvGVhPFCWCIG2F3BvJA"
+      }
+    }
+  }
+}

@@ -1,0 +1,435 @@
+{
+  "name": "Content Rewards Pipeline v6",
+  "nodes": [
+    {
+      "id": "form-trigger-001",
+      "name": "1. Form Trigger",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.1,
+      "position": [0, 300],
+      "parameters": {
+        "formTitle": "Content Rewards",
+        "formFields": {
+          "values": [
+            {"fieldType": "text", "fieldLabel": "YouTube URL", "name": "youtube_url", "requiredField": true},
+            {"fieldType": "dropdown", "fieldLabel": "Campaign", "name": "campaign_name", "options": ["on_the_margin", "samuel_lee_md", "ddurz", "tarteel"], "requiredField": true},
+            {"fieldType": "text", "fieldLabel": "Adam Notes", "name": "adam_notes"},
+            {"fieldType": "text", "fieldLabel": "Episode Title", "name": "episode_title"},
+            {"fieldType": "number", "fieldLabel": "Episode Number", "name": "episode_number"},
+            {"fieldType": "text", "fieldLabel": "Account", "name": "account_to_post_from"}
+          ]
+        },
+        "options": {}
+      },
+      "webhookId": "cr-v6"
+    },
+    {
+      "id": "airtable-002",
+      "name": "2. Get Campaign Config",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [220, 300],
+      "parameters": {
+        "operation": "get",
+        "base": {"__rl": true, "value": "={{$env.AIRTABLE_APP_ID}}", "mode": "id"},
+        "table": {"__rl": true, "value": "tblCAMPAIGNS", "mode": "id"},
+        "filters": {"filterByFormula": "={name}='{{ $json.campaign_name }}'", "maxRecords": 1}
+      },
+      "credentials": {"airtableTokenApi": {"id": "[REPLACE]", "name": "Airtable"}}
+    },
+    {
+      "id": "code-003",
+      "name": "3. Parse Campaign Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300],
+      "parameters": {
+        "jsCode": "const r=$input.first().json,f=r.fields||{};const p=s=>s?s.split(',').map(t=>t.trim()).filter(Boolean):[];return[{json:{...$input.first().json,campaign_config:{platform:f.platform||'tiktok',required_hashtags:p(f.required_hashtags),required_mentions:p(f.required_mentions),clip_length_min:f.clip_length_min||30,clip_length_max:f.clip_length_max||90}}}];"
+      }
+    },
+    {
+      "id": "http-004",
+      "name": "4. Supadata Transcript",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [660, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.supadata.ai/v1/youtube/transcript",
+        "sendBody": true,
+        "bodyParameters": {"parameters": [{"name": "url", "value": "={{ $json.youtube_url }}"}, {"name": "word_level", "value": true}]},
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "x-api-key", "value": "={{ $env.SUPADATA_API_KEY }}"}]},
+        "options": {"timeout": 60000, "retry": {"enabled": true, "maxTries": 3, "waitBetweenTries": 2000}}
+      }
+    },
+    {
+      "id": "code-005",
+      "name": "5. Parse Transcript",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 300],
+      "parameters": {
+        "jsCode": "const r=$input.first().json;let d=r.data?.transcript||r.transcript||[];let t=d.length?(typeof d[0]==='string'?d.join('\\n'):d.map(w=>`[${fmt(w.start||0)}] ${w.text||''}`).join('\\n')):'';function fmt(ms){const s=Math.floor(ms/1000),m=Math.floor(s/60);return`${m}:${(s%60).toString().padStart(2,'0')}`;}return[{json:{...r,transcript:t}}];"
+      }
+    },
+    {
+      "id": "code-006",
+      "name": "6. Build Prompt 1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300],
+      "parameters": {
+        "jsCode": "const i=$input.first().json,t=i.transcript||'',c=i.campaign_config||{};const p=`YOU ARE AN ELITE SHORT-FORM CONTENT STRATEGIST. Analyze transcript and identify timestamp ranges for viral clips.\\n\\nTHE 6-SECOND GATE: Retention past second 6 is everything.\\n\\nTHE 3 ELEMENTS:\\n1. PATTERN INTERRUPT - visual/auditory disruption\\n2. OPEN LOOP - statement needing resolution in first 6 sec\\n3. SPECIFIC NUMBER - concrete detail\\n\\nTRIGGER TYPES: Controversy, Confession, Revelation, Conflict, Extreme Claim, Mid-Sentence Entry, Stakes, Punchline\\n\\nINSTRUCTIONS:\\n1. Scan for emotional spike moments\\n2. Score on Hook Quality (1-10): mid-action/+2, unanswered question/+2, emotional charge/+2, niche-specific/+2, specific/+2\\n3. Evaluate 6-second gate\\n4. Map retention arc: hook → tension → payoff\\n5. Rank top 5-10 clips\\n\\nOUTPUT: {\"clips\":[{\"rank\":1,\"hook_score\":9,\"timestamp_start\":\"MM:SS\",\"timestamp_end\":\"MM:SS\",\"trigger_type\":\"...\",\"opening_line\":\"...\",\"hook_clip_timestamp\":\"MM:SS\",\"six_second_gate\":{\"pattern_interrupt\":\"Yes/No\",\"open_loop\":\"Yes/No\",\"specific_detail\":\"Yes/No\"},\"why_it_hits\":\"...\"}]}\\n\\nTRANSCRIPT:\\n${t}\\n\\nCAMPAIGN: Platform=${c.platform||'tiktok'}, Hashtags=${(c.required_hashtags||[]).join(',')}, Min=${c.clip_length_min||30}s Max=${c.clip_length_max||90}s`;return[{json:{...i,prompt_1:p}}];"
+      }
+    },
+    {
+      "id": "http-007",
+      "name": "7. Claude - Find Clips",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1320, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "x-api-key", "value": "={{$env.ANTHROPIC_API_KEY}}"}, {"name": "anthropic-version", "value": "2023-06-01"}]},
+        "sendBody": true,
+        "bodyParameters": {"parameters": [{"name": "model", "value": "claude-sonnet-4-20250514"}, {"name": "max_tokens", "value": 4096}, {"name": "messages", "value": "=[{\"role\": \"user\", \"content\": $json.prompt_1}]"}]},
+        "options": {"timeout": 180000}
+      }
+    },
+    {
+      "id": "code-008",
+      "name": "8. Parse Clips",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 300],
+      "parameters": {
+        "jsCode": "const r=$input.first().json,c=r.message?.content||r.text||'';const m=c.match(/\\[[\\s\\S]*\\]/);let cl=[];if(m){try{cl=JSON.parse(m[0]);}catch{}}return[{json:{...r,clips:cl}}];"
+      }
+    },
+    {
+      "id": "slack-010",
+      "name": "10. Slack - Select Clips",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [1980, 300],
+      "parameters": {
+        "channel": "={{$json.campaign_name}}",
+        "text": "=🎬 *Select Clips*\\nClips found: {{$json.clipCount}}\\n_Reply here: {{$execution.resumeUrl}}_"
+      },
+      "credentials": {"slackBotTokenApi": {"id": "[REPLACE]", "name": "Slack"}}
+    },
+    {
+      "id": "wait-011",
+      "name": "11. Wait for Selection",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [2200, 300],
+      "parameters": {
+        "resume": "form",
+        "formTitle": "Select Clips",
+        "formFields": {"values": [{"fieldType": "text", "fieldLabel": "Selected clip numbers (comma-separated", "name": "selected_clips"}]},
+        "amount": 30,
+        "unit": "minutes"
+      }
+    },
+    {
+      "id": "code-012",
+      "name": "12. Parse Selection",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2420, 300],
+      "parameters": {
+        "jsCode": "const s=$input.first().json,c=s.clips||[],sel=s.selected_clips||'1';const nums=sel.split(/[,;\\s]+/).map(n=>parseInt(n.trim())-1).filter(n=>!isNaN(n)&&n>=0&&n<c.length);return[{json:{...s,selectedClips:nums.map(i=>c[i]).filter(Boolean)}}];"
+      }
+    },
+    {
+      "id": "loop-013",
+      "name": "13. Loop Over Clips",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [2640, 300],
+      "parameters": {"batchSize": 1}
+    },
+    {
+      "id": "code-014",
+      "name": "14. Build Prompt 2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2860, 300],
+      "parameters": {
+        "jsCode": "const c=$input.item.json,cfg=$input.first().json.campaign_config||{};const p=`YOU ARE AN ELITE SHORT-FORM CAPTION STRATEGIST. Generate 3 caption variants + 5 hook overlays.\\n\\nTHE 6-SECOND GATE: Hook overlay must win with: OPEN LOOP, SPECIFIC NUMBER, or PATTERN INTERRUPT.\\n\\n5 OVERLAY TYPES:\\n1. TEXT CLAIM - bold statement on screen\\n2. PROOF SIGNAL - references visible evidence\\n3. CONTRADICTION - contradicts common belief\\n4. EMOTION TRIGGER - leads with feeling\\n5. SOCIAL PROOF - leads with others' results\\n\\n3 CAPTION VARIANTS:\\nA) CURIOSITY GAP - max open loop\\nB) STAKES/EMOTIONAL - loss aversion\\nC) DIRECT KEYWORD - searchable, niche-specific\\n\\nOUTPUT: {\"captions\":{\"variant_a\":{\"type\":\"Curiosity Gap\",\"caption\":\"...\",\"recommended_overlay\":\"overlay_1\",\"hashtags\":[\"#tag1\"]},\"variant_b\":{},\"variant_c\":{}},\"hook_overlays\":{\"overlay_1\":{\"text\":\"...\",\"open_loop\":\"...\"},...}}\\n\\nCLIP: ${c.opening_line}\\nTRIGGER: ${c.trigger_type}\\nPLATFORM: ${cfg.platform||'tiktok'}\\nREQUIRED HASHTAGS: ${(cfg.required_hashtags||[]).join(' ')}\\nREQUIRED MENTIONS: ${(cfg.required_mentions||[]).join(' ')}`;return[{json:{...c,prompt_2:p}}];"
+      }
+    },
+    {
+      "id": "http-015",
+      "name": "15. Claude - Generate Captions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [3080, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "x-api-key", "value": "={{$env.ANTHROPIC_API_KEY}}"}, {"name": "anthropic-version", "value": "2023-06-01"}]},
+        "sendBody": true,
+        "bodyParameters": {"parameters": [{"name": "model", "value": "claude-haiku-4-5-20251001"}, {"name": "max_tokens", "value": 2048}, {"name": "messages", "value": "=[{\"role\": \"user\", \"content\": $json.prompt_2}]"}]},
+        "options": {"timeout": 60000}
+      }
+    },
+    {
+      "id": "code-016",
+      "name": "16. Parse Captions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3300, 300],
+      "parameters": {
+        "jsCode": "const r=$input.first().json,c=r.message?.content||'';const m=c.match(/\\{[\\s\\S]*\\}/);let d=null;if(m){try{d=JSON.parse(m[0]);}catch{}}return[{json:{...r,captionData:d}}];"
+      }
+    },
+    {
+      "id": "slack-018",
+      "name": "18. Slack - Select Caption",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [3740, 300],
+      "parameters": {
+        "channel": "={{$json.campaign_name}}",
+        "text": "=✍️ *Select Caption*\\n_Reply here: {{$execution.resumeUrl}}_"
+      },
+      "credentials": {"slackBotTokenApi": {"id": "[REPLACE]", "name": "Slack"}}
+    },
+    {
+      "id": "wait-019",
+      "name": "19. Wait for Caption",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [3960, 300],
+      "parameters": {
+        "resume": "form",
+        "formTitle": "Select Caption",
+        "formFields": {"values": [{"fieldType": "text", "fieldLabel": "Caption variant (a/b/c)", "name": "caption_selection"}]},
+        "amount": 30,
+        "unit": "minutes"
+      }
+    },
+    {
+      "id": "code-020",
+      "name": "20. Parse Caption Selection",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [4180, 300],
+      "parameters": {
+        "jsCode": "const s=$input.first().json,sel=s.caption_selection||'a';return[{json:{...s,selectedVariant:sel.toLowerCase().charAt(0)}}];"
+      }
+    },
+    {
+      "id": "http-021",
+      "name": "21. Trim Hook Clip",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [4400, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.API_BASE_URL}}/media/trim",
+        "sendBody": true,
+        "bodyParameters": {"parameters": [{"name": "inputUrl", "={{$json.youtube_url}}"}, {"name": "startTime", "={{$json.hook_clip_timestamp}}"}, {"name": "endTime", "={{$json.timestamp_start}}"]},
+        "options": {"timeout": 120000, "retry": {"enabled": true, "maxTries": 3}}
+      }
+    },
+    {
+      "id": "http-022",
+      "name": "22. Trim Main Clip",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [4400, 400],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.API_BASE_URL}}/media/trim",
+        "sendBody": true,
+        "bodyParameters": {"parameters": [{"name": "inputUrl", "={{$json.youtube_url}}"}, {"name": "startTime", "={{$json.timestamp_start}}"}, {"name": "endTime", "={{$json.timestamp_end}}"]},
+        "options": {"timeout": 120000, "retry": {"enabled": true, "maxTries": 3}}
+      }
+    },
+    {
+      "id": "code-023",
+      "name": "23. Merge Clips",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [4620, 300],
+      "parameters": {
+        "jsCode": "const i=$input.all();const h=i.find(x=>x.json?.duration<=5)?.json,m=i.find(x=>x.json?.duration>5)?.json;return[{json:{...$input.first().json,hookClipUrl:h?.outputUrl,mainClipUrl:m?.outputUrl}}];"
+      }
+    },
+    {
+      "id": "code-024",
+      "name": "24. Build Render Props",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [4840, 300],
+      "parameters": {
+        "jsCode": "const i=$input.first().json;return[{json:{...i,renderProps:{composition:\"SocialClip\",inputProps:{hookClipUrl:i.hookClipUrl,mainClipUrl:i.mainClipUrl}}}];"
+      }
+    },
+    {
+      "id": "http-025",
+      "name": "25. Trigger Render",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [5060, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.API_BASE_URL}}/render-with-webhook",
+        "sendBody": true,
+        "bodyParameters": {"parameters": [{"name": "composition", "value": "={{$json.renderProps.composition}}"}, {"name": "inputProps", "value": "={{$json.renderProps.inputProps}}"}, {"name": "n8nResumeUrl", "value": "={{$execution.resumeUrl}}"}]},
+        "options": {"timeout": 30000}
+      }
+    },
+    {
+      "id": "wait-026",
+      "name": "26. Wait for Render",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [5280, 300],
+      "parameters": {
+        "resume": "webhook",
+        "options": {"webhookSuffix": "render-complete"}
+      }
+    },
+    {
+      "id": "http-027",
+      "name": "27. Check Render Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [5500, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.API_BASE_URL}}/progress/{{$json.renderId}}",
+        "options": {"timeout": 10000}
+      }
+    },
+    {
+      "id": "code-028",
+      "name": "28. Prepare Final Review",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [5720, 300],
+      "parameters": {
+        "jsCode": "const r=$input.first().json;return[{json:{...r,isComplete:r.done||false}}];"
+      }
+    },
+    {
+      "id": "slack-029",
+      "name": "29. Slack - Final Review",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [5940, 300],
+      "parameters": {
+        "channel": "={{$json.campaign_name}}",
+        "text": "=🎬 *Final Review*\\nRender status: {{$json.isComplete}}\\n_Reply here: {{$execution.resumeUrl}}_"
+      },
+      "credentials": {"slackBotTokenApi": {"id": "[REPLACE]", "name": "Slack"}}
+    },
+    {
+      "id": "wait-030",
+      "name": "30. Wait Final Approval",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [6160, 300],
+      "parameters": {
+        "resume": "form",
+        "formTitle": "Final Decision",
+        "formFields": {"values": [{"fieldType": "text", "fieldLabel": "Approve or reject", "name": "approval"}]},
+        "amount": 60,
+        "unit": "minutes"
+      }
+    },
+    {
+      "id": "code-031",
+      "name": "31. Parse Final Decision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [6380, 300],
+      "parameters": {
+        "jsCode": "const a=($input.first().json.approval||'').toLowerCase();return[{json:{...$input.first().json,isApproved:a==='approve'||a==='yes'}}];"
+      }
+    },
+    {
+      "id": "airtable-032",
+      "name": "32. Create Airtable Record",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [6600, 300],
+      "parameters": {
+        "operation": "create",
+        "base": {"__rl": true, "value": "={{$env.AIRTABLE_APP_ID}}", "mode": "id"},
+        "table": {"__rl": true, "value": "tblCLIPS", "mode": "id"},
+        "fieldsToSend": {"fields": [
+          {"field": "name", "value": "={{$json.episode_title}}"},
+          {"field": "youtube_url", "value": "={{$json.youtube_url}}"},
+          {"field": "campaign", "value": "={{$json.campaign_name}}"},
+          {"field": "status", "value": "={{$json.isApproved?'approved':'rejected'}}"}
+        ]}
+      },
+      "credentials": {"airtableTokenApi": {"id": "[REPLACE]", "name": "Airtable"}}
+    },
+    {
+      "id": "slack-033",
+      "name": "33. Slack - Complete",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [6820, 300],
+      "parameters": {
+        "channel": "={{$json.campaign_name}}",
+        "text": "={{$json.isApproved?'✅ Approved':'❌ Rejected'}}"
+      },
+      "credentials": {"slackBotTokenApi": {"id": "[REPLACE]", "name": "Slack"}}
+    },
+    {
+      "id": "respond-034",
+      "name": "34. Respond Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [7040, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"success\":true}"
+      }
+    }
+  ],
+  "connections": {
+    "1. Form Trigger": {"main": [[{"node": "2. Get Campaign Config", "type": "main", "index": 0}]]},
+    "2. Get Campaign Config": {"main": [[{"node": "3. Parse Campaign Config", "type": "main", "index": 0}]]},
+    "3. Parse Campaign Config": {"main": [[{"node": "4. Supadata Transcript", "type": "main", "index": 0}]]},
+    "4. Supadata Transcript": {"main": [[{"node": "5. Parse Transcript", "type": "main", "index": 0}]]},
+    "5. Parse Transcript": {"main": [[{"node": "6. Build Prompt 1", "type": "main", "index": 0}]]},
+    "6. Build Prompt 1": {"main": [[{"node": "7. Claude - Find Clips", "type": "main", "index": 0}]]},
+    "7. Claude - Find Clips": {"main": [[{"node": "8. Parse Clips", "type": "main", "index": 0}]]},
+    "8. Parse Clips": {"main": [[{"node": "10. Slack - Select Clips", "type": "main", "index": 0}]]},
+    "10. Slack - Select Clips": {"main": [[{"node": "11. Wait for Selection", "type": "main", "index": 0}]]},
+    "11. Wait for Selection": {"main": [[{"node": "12. Parse Selection", "type": "main", "index": 0}]]},
+    "12. Parse Selection": {"main": [[{"node": "13. Loop Over Clips", "type": "main", "index": 0}]]},
+    "13. Loop Over Clips": {"main": [[{"node": "14. Build Prompt 2", "type": "main", "index": 1}], [{"node": "34. Respond Webhook", "type": "main", "index": 0}]]},
+    "14. Build Prompt 2": {"main": [[{"node": "15. Claude - Generate Captions", "type": "main", "index": 0}]]},
+    "15. Claude - Generate Captions": {"main": [[{"node": "16. Parse Captions", "type": "main", "index": 0}]]},
+    "16. Parse Captions": {"main": [[{"node": "18. Slack - Select Caption", "type": "main", "index": 0}]]},
+    "18. Slack - Select Caption": {"main": [[{"node": "19. Wait for Caption", "type": "main", "index": 0}]]},
+    "19. Wait for Caption": {"main": [[{"node": "20. Parse Caption Selection", "type": "main", "index": 0}]]},
+    "20. Parse Caption Selection": {"main": [[{"node": "21. Trim Hook Clip", "type": "main", "index": 0}, {"node": "22. Trim Main Clip", "type": "main", "index": 0}]]},
+    "21. Trim Hook Clip": {"main": [[{"node": "23. Merge Clips", "type": "main", "index": 0}]]},
+    "22. Trim Main Clip": {"main": [[{"node": "23. Merge Clips", "type": "main", "index": 0}]]},
+    "23. Merge Clips": {"main": [[{"node": "24. Build Render Props", "type": "main", "index": 0}]]},
+    "24. Build Render Props": {"main": [[{"node": "25. Trigger Render", "type": "main", "index": 0}]]},
+    "25. Trigger Render": {"main": [[{"node": "26. Wait for Render", "type": "main", "index": 0}]]},
+    "26. Wait for Render": {"main": [[{"node": "27. Check Render Status", "type": "main", "index": 0}]]},
+    "27. Check Render Status": {"main": [[{"node": "28. Prepare Final Review", "type": "main", "index": 0}]]},
+    "28. Prepare Final Review": {"main": [[{"node": "29. Slack - Final Review", "type": "main", "index": 0}]]},
+    "29. Slack - Final Review": {"main": [[{"node": "30. Wait Final Approval", "type": "main", "index": 0}]]},
+    "30. Wait Final Approval": {"main": [[{"node": "31. Parse Final Decision", "type": "main", "index": 0}]]},
+    "31. Parse Final Decision": {"main": [[{"node": "32. Create Airtable Record", "type": "main", "index": 0}]]},
+    "32. Create Airtable Record": {"main": [[{"node": "33. Slack - Complete", "type": "main", "index": 0}]]},
+    "33. Slack - Complete": {"main": [[{"node": "13. Loop Over Clips", "type": "main", "index": 1}]}
+  }
+}
