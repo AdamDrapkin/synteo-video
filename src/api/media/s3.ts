@@ -196,13 +196,24 @@ export async function handleGetUrl(req: express.Request, res: express.Response) 
  */
 export async function handleDownloadUrl(req: express.Request, res: express.Response) {
   try {
-    const { url, fileName } = req.body;
+    let { url, fileName } = req.body;
 
     if (!url) {
       return res.status(400).json({ error: 'url is required' });
     }
 
     console.log(`Downloading from URL: ${url}`);
+
+    // Convert Google Drive URL to direct download format
+    if (url.includes('drive.google.com')) {
+      // Extract file ID from various Google Drive URL formats
+      const fileIdMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)\//);
+      if (fileIdMatch && fileIdMatch[1]) {
+        const fileId = fileIdMatch[1];
+        url = `https://drive.google.com/uc?export=download&id=${fileId}`;
+        console.log(`Converted Google Drive URL to: ${url}`);
+      }
+    }
 
     // Download the file from the source URL
     const response = await fetch(url, {
