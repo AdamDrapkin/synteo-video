@@ -5,14 +5,38 @@ import {
   handleUpload,
   handleDownload,
   handleGetUrl,
+  handleDownloadUrl,
   handleTrim,
   handleTranscribe,
+  handleListMusic,
+  handleGetMusicStream,
+  handleMixAudio,
+  handleGetMusicLibrary,
 } from './media/index.js';
 import { handleWebhook, handleRenderWithWebhook } from './webhook.js';
+import { handleSlackActions } from './slack-actions.js';
 import { CONFIG } from './config.js';
+import { isAirtableConfigured } from './airtable.js';
 
 const app = express();
 app.use(express.json({ limit: '50mb' }));
+// Parse URL-encoded bodies for Slack interactive endpoints
+app.use(express.urlencoded({ extended: true }));
+
+// ============================================
+// Health Check
+// ============================================
+
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    services: {
+      slack: !!CONFIG.slack.botToken,
+      airtable: isAirtableConfigured(),
+    },
+  });
+});
 
 // AWS Configuration
 const AWS_CONFIG = {
@@ -110,6 +134,25 @@ app.get('/media/download/*', handleDownload);
 
 // GET /media/url/:key - Get presigned URL for S3 file
 app.get('/media/url/*', handleGetUrl);
+app.post('/media/download-url', handleDownloadUrl);
+
+// ============================================
+// Music Endpoints (Sprint 8 Phase 1)
+// ============================================
+
+// IMPORTANT: Specific routes must come BEFORE parameterized routes
+
+// GET /media/list-music - List available music tracks
+app.get('/media/list-music', handleListMusic);
+
+// GET /media/music-library - Get library formatted for Claude prompt
+app.get('/media/music-library', handleGetMusicLibrary);
+
+// POST /media/mix-audio - Mix video with background music
+app.post('/media/mix-audio', handleMixAudio);
+
+// GET /media/music/:fileName - Stream music file from S3 (must be AFTER specific routes)
+app.get('/media/music/:fileName', handleGetMusicStream);
 
 // ============================================
 // Webhook Endpoints (Sprint 5)
@@ -120,6 +163,13 @@ app.post('/render-with-webhook', handleRenderWithWebhook);
 
 // POST /webhook - Remotion Lambda callback endpoint
 app.post('/webhook', handleWebhook);
+
+// ============================================
+// Slack Endpoints (Sprint 7)
+// ============================================
+
+// POST /slack/actions - Interactive button handlers
+app.post('/slack/actions', handleSlackActions);
 
 const PORT = CONFIG.api.port;
 

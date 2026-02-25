@@ -188,4 +188,95 @@ export async function handleGetUrl(req: express.Request, res: express.Response) 
   }
 }
 
+/**
+ * POST /media/download-url
+ * Download a file from any URL and upload to S3
+ * Accepts: { url: string, fileName?: string }
+ * Returns: { key: string, url: string }
+ */
+export async function handleDownloadUrl(req: express.Request, res: express.Response) {
+  try {
+    const { url, fileName } = req.body;
+
+    if (!url) {
+      return res.status(400).json({ error: 'url is required' });
+    }
+
+    console.log(`Downloading from URL: ${url}`);
+
+    // Download the file from the source URL
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'n8n/1.0',
+      },
+    });
+
+    if (!response.ok) {
+      return res.status(400).json({
+        error: `Failed to download: ${response.status} ${response.statusText}`
+      });
+    }
+
+    // Get content type
+    const contentType = response.headers.get('content-type') || 'application/octet-stream';
+
+    // Validate content type
+    if (!ALLOWED_CONTENT_TYPES.includes(contentType)) {
+      return res.status(400).json({
+        error: `Invalid content-type: ${contentType}. Allowed: ${ALLOWED_CONTENT_TYPES.join(', ')}`,
+      });
+    }
+
+    // Get the buffer
+    const buffer = Buffer.from(await response.arrayBuffer());
+
+    // File size limit: 500MB max
+    const MAX_FILE_SIZE = 500 * 1024 * 1024;
+    if (buffer.length > MAX_FILE_SIZE) {
+      return res.status(400).json({
+        error: `File too large. Maximum size is 500MB, got ${(buffer.length / 1024 / 1024).toFixed(2)}MB`,
+      });
+    }
+
+    // Determine filename
+    const name = fileName || `download-${Date.now()}`;
+    const ext = contentType.split('/')[1] || 'mp4';
+    const finalFileName = name.endsWith(`.${ext}`) ? name : `${name}.${ext}`;
+
+    // Generate unique key
+    const timestamp = Date.now();
+    const key = `uploads/${timestamp}-${finalFileName}`;
+
+    // Upload to S3
+    const upload = new Upload({
+      client: s3Client,
+      params: {
+        Bucket: CONFIG.aws.bucketName,
+        Key: key,
+        Body: buffer,
+        ContentType: contentType,
+      },
+    });
+
+    await upload.done();
+
+    // Get public URL (assuming bucket is public or use presigned)
+    const publicUrl = `https://${CONFIG.aws.bucketName}.s3.${CONFIG.aws.region}.amazonaws.com/${key}`;
+
+    console.log(`Uploaded to S3: ${key}`);
+
+    res.json({
+      key,
+      url: publicUrl,
+      contentType,
+      size: buffer.length,
+    });
+  } catch (error) {
+    console.error('Download URL error:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
 export { s3Client };
