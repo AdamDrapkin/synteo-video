@@ -56,22 +56,65 @@ export async function handleTranscribe(req: express.Request, res: express.Respon
 
     // Download audio file to temp location
     const tempDir = os.tmpdir();
-    const ext = path.extname(new URL(audioUrl).pathname) || '.mp3';
-    const tempPath = path.join(tempDir, `audio-${Date.now()}${ext}`);
+    const ext = path.extname(new URL(audioUrl).pathname) || '.mp4';
+    const tempPath = path.join(tempDir, `video-${Date.now()}${ext}`);
+    const audioPath = path.join(tempDir, `audio-${Date.now()}.mp3`);
 
     console.log('[Transcribe] Downloading file...');
     await downloadFile(audioUrl, tempPath);
     console.log('[Transcribe] File downloaded');
 
-    // Read file into memory
-    console.log('[Transcribe] Reading file...');
-    const audioData = await fs.readFile(tempPath);
-    console.log(`[Transcribe] File read, size: ${audioData.length} bytes`);
+    // Check file size - if > 25MB, compress with ffmpeg
+    const fileStat = await fs.stat(tempPath);
+    const fileSizeMB = fileStat.size / (1024 * 1024);
+    console.log(`[Transcribe] File size: ${fileSizeMB.toFixed(2)} MB`);
+
+    if (fileSizeMB > 25) {
+      console.log('[Transcribe] File too large, compressing with ffmpeg...');
+      const { exec } = await import('child_process');
+      const util = await import('util');
+      const execPromise = util.promisify(exec);
+
+      // Extract audio and compress - reduce bitrate to meet 25MB limit
+      const durationCmd = await execPromise(`ffmpeg -i "${tempPath}" 2>&1 | grep "Duration" | cut -d' ' -f4 | sed 's/,//'`);
+      const duration = durationCmd.stdout.trim();
+
+      // Calculate target bitrate to get ~20MB file: target_size_mb / duration_sec * 8
+      // Target 20MB, assume max 30 min video = 1800s -> ~90kbit/s
+      const targetBitrate = '96k';
+
+      await execPromise(`ffmpeg -i "${tempPath}" -vn -acodec libmp3lame -b:a ${targetBitrate} -y "${audioPath}"`);
+      console.log('[Transcribe] Compression complete');
+
+      // Use compressed audio
+      await fs.unlink(tempPath).catch(() => {}); // delete original
+    } else {
+      // Small file - use as-is (or convert to mp3 if needed)
+      if (!ext.includes('mp3')) {
+        console.log('[Transcribe] Converting to mp3...');
+        const { exec } = await import('child_process');
+        const util = await import('util');
+        const execPromise = util.promisify(exec);
+        await execPromise(`ffmpeg -i "${tempPath}" -vn -acodec libmp3lame -b:a 128k -y "${audioPath}"`);
+        await fs.unlink(tempPath).catch(() => {});
+      } else {
+        // Already mp3, just rename
+        await fs.rename(tempPath, audioPath);
+      }
+    }
+
+    // Read compressed file into memory
+    console.log('[Transcribe] Reading audio file...');
+    const audioData = await fs.readFile(audioPath);
+    console.log(`[Transcribe] Audio read, size: ${audioData.length} bytes`);
+
+    // Cleanup temp files
+    await fs.unlink(audioPath).catch(() => {});
 
     // Create FormData
     console.log('[Transcribe] Calling Whisper API...');
     const formData = new FormData();
-    formData.append('file', new Blob([audioData]), `audio${ext}`);
+    formData.append('file', new Blob([audioData]), `audio.mp3`);
     formData.append('model', model);
     formData.append('language', language);
     if (wordTimestamps) {
