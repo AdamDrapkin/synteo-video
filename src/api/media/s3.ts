@@ -216,10 +216,12 @@ export async function handleDownloadUrl(req: express.Request, res: express.Respo
     }
 
     // Download the file from the source URL
+    // Note: redirect: 'follow' is needed for Google Drive URLs
     const response = await fetch(url, {
       headers: {
         'User-Agent': 'n8n/1.0',
       },
+      redirect: 'follow',
     });
 
     if (!response.ok) {
