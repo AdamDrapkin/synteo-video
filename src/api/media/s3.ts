@@ -226,27 +226,78 @@ export async function handleDownloadUrl(req: express.Request, res: express.Respo
 
     // Handle Google Drive interstitial page (HTML response means we need confirmation)
     let contentType = response.headers.get('content-type') || '';
+    console.log(`Initial response: status=${response.status}, content-type=${contentType}, url=${response.url}`);
+
     if (contentType.includes('text/html')) {
       const html = await response.text();
-      console.log(`Google Drive HTML response (first 500 chars): ${html.substring(0, 500)}`);
+      console.log(`Google Drive HTML response (first 1000 chars): ${html.substring(0, 1000)}`);
 
       // Try multiple patterns to extract download URL from Google Drive HTML
 
-      // Pattern 1: confirm= token in URL
+      // Pattern 1: confirm= token in URL (most common)
       let confirmMatch = html.match(/confirm=([^&"]+)/);
       if (confirmMatch && confirmMatch[1]) {
         const confirmToken = confirmMatch[1];
+        // Try both with &confirm= and &confirm=t
         const downloadUrl = `${url}&confirm=${confirmToken}`;
         console.log(`Google Drive: following confirmation redirect with token: ${confirmToken}`);
 
         response = await fetch(downloadUrl, {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': '*/*',
+            'Referer': 'https://drive.google.com/',
           },
           redirect: 'follow',
         });
 
         contentType = response.headers.get('content-type') || '';
+        console.log(`After confirm redirect: status=${response.status}, content-type=${contentType}, url=${response.url}`);
+
+        // If still HTML, try harder - check for additional patterns
+        if (contentType.includes('text/html')) {
+          // We already consumed response.text() above - need to re-fetch
+          console.log(`Still HTML after confirm redirect, need to re-fetch to parse`);
+          response = await fetch(downloadUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': '*/*',
+              'Referer': 'https://drive.google.com/',
+            },
+            redirect: 'follow',
+          });
+          const retryHtml = await response.text();
+          console.log(`Still HTML after confirm, checking for additional patterns (first 500 chars): ${retryHtml.substring(0, 500)}`);
+
+          // Pattern 1b: look for downloadUrl in a JS variable
+          const downloadUrlMatch = retryHtml.match(/downloadUrl\s*=\s*["']([^"']+)["']/);
+          if (downloadUrlMatch && downloadUrlMatch[1]) {
+            console.log(`Found downloadUrl in JS: ${downloadUrlMatch[1]}`);
+            response = await fetch(downloadUrlMatch[1], {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Referer': 'https://drive.google.com/',
+              },
+              redirect: 'follow',
+            });
+            contentType = response.headers.get('content-type') || '';
+          } else {
+            // Try looking for URl in jsdata variable
+            const jsdataMatch = retryHtml.match(/["']https:\\\/\\\/[^"']*uc[^\s"']*["']/);
+            if (jsdataMatch) {
+              const cleanedUrl = jsdataMatch[0].replace(/\\/g, '');
+              console.log(`Found URL in jsdata: ${cleanedUrl}`);
+              response = await fetch(cleanedUrl, {
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                  'Referer': 'https://drive.google.com/',
+                },
+                redirect: 'follow',
+              });
+              contentType = response.headers.get('content-type') || '';
+            }
+          }
+        }
       } else {
         // Pattern 2: look for form action URL
         const formActionMatch = html.match(/action="([^"]+)"/);
@@ -272,11 +323,36 @@ export async function handleDownloadUrl(req: express.Request, res: express.Respo
 
           contentType = response.headers.get('content-type') || '';
         } else {
-          return res.status(400).json({
-            error: 'Could not extract download URL from Google Drive response',
-          });
+          // Pattern 3: Try multiple fallback approaches
+          console.log('Pattern 1 and 2 failed, trying fallback patterns');
+
+          // Try to find any URL that looks like a download link
+          const urlMatch = html.match(/https:\/\/[^"'\s]*googleapis\.com[^"'\s]*/);
+          if (urlMatch) {
+            console.log(`Found potential download URL: ${urlMatch[0]}`);
+            response = await fetch(urlMatch[0], {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+              },
+              redirect: 'follow',
+            });
+            contentType = response.headers.get('content-type') || '';
+          } else {
+            console.log('All patterns failed. HTML length:', html.length);
+            console.log('Full HTML for debugging:', html.substring(0, 2000));
+            return res.status(400).json({
+              error: 'Could not extract download URL from Google Drive response. Check server logs for details.',
+            });
+          }
         }
       }
+    }
+
+    // If still HTML after all attempts, log and fail with useful message
+    if (contentType.includes('text/html')) {
+      console.log(`WARNING: Still HTML after all redirect getting attempts. Final URL: ${response.url}`);
+      const finalHtml = await response.text();
+      console.log(`Final HTML (first 500 chars): ${finalHtml.substring(0, 500)}`);
     }
 
     if (!response.ok) {
