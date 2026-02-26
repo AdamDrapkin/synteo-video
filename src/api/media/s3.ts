@@ -250,17 +250,20 @@ export async function handleDownloadUrl(req: express.Request, res: express.Respo
       } else {
         // Pattern 2: look for form action URL
         const formActionMatch = html.match(/action="([^"]+)"/);
-        if (formActionMatch && formActionMatch[1]) {
-          const formAction = formActionMatch[1];
-          // Extract any hidden form values
-          const formTokenMatch = html.match(/name="confirm" value="([^"]+)"/);
-          const formToken = formTokenMatch ? formTokenMatch[1] : '';
+        const formTokenMatch = html.match(/name="confirm" value="([^"]+)"/);
 
-          const downloadUrl = formAction + (formToken ? `&confirm=${formToken}` : '');
+        if (formActionMatch && formActionMatch[1]) {
+          // Extract file ID from the original URL
+          const fileIdMatch = url.match(/id=([^&]+)/);
+          const fileId = fileIdMatch ? fileIdMatch[1] : '';
+          const formToken = formTokenMatch ? formTokenMatch[1] : 't';
+
+          // Build proper download URL with id parameter
+          const downloadUrl = `${formActionMatch[1]}?id=${fileId}&confirm=${formToken}`;
           console.log(`Google Drive: using form action URL: ${downloadUrl}`);
 
           response = await fetch(downloadUrl, {
-            method: 'POST',
+            method: 'GET',
             headers: {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             },
