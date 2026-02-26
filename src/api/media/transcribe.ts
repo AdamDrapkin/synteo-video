@@ -75,13 +75,22 @@ export async function handleTranscribe(req: express.Request, res: express.Respon
       const util = await import('util');
       const execPromise = util.promisify(exec);
 
-      // Extract audio and compress - reduce bitrate to meet 25MB limit
-      const durationCmd = await execPromise(`ffmpeg -i "${tempPath}" 2>&1 | grep "Duration" | cut -d' ' -f4 | sed 's/,//'`);
-      const duration = durationCmd.stdout.trim();
+      // Get video duration
+      let targetBitrate = '64k'; // default fallback
+      try {
+        const durationOutput = await execPromise(`ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${tempPath}"`);
+        const durationSec = parseFloat(durationOutput.stdout.trim()) || 0;
+        console.log(`[Transcribe] Video duration: ${durationSec} seconds`);
 
-      // Calculate target bitrate to get ~20MB file: target_size_mb / duration_sec * 8
-      // Target 20MB, assume max 30 min video = 1800s -> ~90kbit/s
-      const targetBitrate = '96k';
+        // Target ~20MB: bitrate = (target_mb * 8) / duration_sec
+        const targetSizeMB = 20;
+        const calculatedBitrate = Math.round((targetSizeMB * 8 * 1024) / durationSec);
+        // Cap between 32k and 128k
+        targetBitrate = `${Math.max(32, Math.min(128, calculatedBitrate))}k`;
+        console.log(`[Transcribe] Target bitrate: ${targetBitrate}`);
+      } catch (e) {
+        console.log('[Transcribe] Could not detect duration, using default bitrate');
+      }
 
       await execPromise(`ffmpeg -i "${tempPath}" -vn -acodec libmp3lame -b:a ${targetBitrate} -y "${audioPath}"`);
       console.log('[Transcribe] Compression complete');
