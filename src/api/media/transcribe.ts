@@ -61,11 +61,10 @@ export async function handleTranscribe(req: express.Request, res: express.Respon
 
     await downloadFile(audioUrl, tempPath);
 
-    // Read file and convert to base64
+    // Read file into memory
     const audioData = await fs.readFile(tempPath);
-    const base64Audio = audioData.toString('base64');
 
-    // Call Whisper API
+    // Create FormData
     const formData = new FormData();
     formData.append('file', new Blob([audioData]), `audio${ext}`);
     formData.append('model', model);
