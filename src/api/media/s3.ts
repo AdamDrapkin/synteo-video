@@ -217,21 +217,45 @@ export async function handleDownloadUrl(req: express.Request, res: express.Respo
 
     // Download the file from the source URL
     // Note: redirect: 'follow' is needed for Google Drive URLs
-    const response = await fetch(url, {
+    let response = await fetch(url, {
       headers: {
-        'User-Agent': 'n8n/1.0',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       },
       redirect: 'follow',
     });
+
+    // Handle Google Drive interstitial page (HTML response means we need confirmation)
+    let contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('text/html')) {
+      const html = await response.text();
+
+      // Try to extract confirm token from Google Drive HTML
+      const confirmMatch = html.match(/confirm=([^&"]+)/);
+      if (confirmMatch && confirmMatch[1]) {
+        const confirmToken = confirmMatch[1];
+        const downloadUrl = `${url}&confirm=${confirmToken}`;
+        console.log(`Google Drive: following confirmation redirect with token`);
+
+        response = await fetch(downloadUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          },
+          redirect: 'follow',
+        });
+
+        contentType = response.headers.get('content-type') || '';
+      } else {
+        return res.status(400).json({
+          error: 'Could not extract download URL from Google Drive response',
+        });
+      }
+    }
 
     if (!response.ok) {
       return res.status(400).json({
         error: `Failed to download: ${response.status} ${response.statusText}`
       });
     }
-
-    // Get content type
-    const contentType = response.headers.get('content-type') || 'application/octet-stream';
 
     // Validate content type
     if (!ALLOWED_CONTENT_TYPES.includes(contentType)) {
