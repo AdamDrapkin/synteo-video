@@ -13,12 +13,13 @@ export const CONFIG = {
     lambdaFunctionName: process.env.LAMBDA_FUNCTION || 'remotion-render-4-0-427-mem2048mb-disk2048mb-120sec',
     serveUrl: process.env.SERVE_URL || 'https://remotionLambda-useast1-7nig21l89j.s3.us-east-1.amazonaws.com/sites/mkw9luttk2',
     bucketName: process.env.S3_BUCKET || 'remotionlambda-useast1-7nig21l89j',
+    musicBucketName: process.env.MUSIC_S3_BUCKET || 'synteo-music-library',
   },
 
   // API
   api: {
-    baseUrl: process.env.API_BASE_URL || 'http://localhost:3001',
-    port: parseInt(process.env.PORT || '3001', 10),
+    baseUrl: process.env.API_BASE_URL || 'http://localhost:3000',
+    port: parseInt(process.env.PORT || '3000', 10),
     maxUploadSize: process.env.MAX_UPLOAD_SIZE || '50mb',
   },
 
@@ -30,6 +31,19 @@ export const CONFIG = {
   // N8N
   n8n: {
     baseUrl: process.env.N8N_BASE_URL || 'http://localhost:5678',
+  },
+
+  // Slack
+  slack: {
+    botToken: process.env.SLACK_BOT_TOKEN || '',
+    channelId: process.env.SLACK_CHANNEL_ID || '',
+    signingSecret: process.env.SLACK_SIGNING_SECRET || '',
+  },
+
+  // Airtable
+  airtable: {
+    apiKey: process.env.AIRTABLE_API_KEY || '',
+    baseId: process.env.AIRTABLE_BASE_ID || 'apprfl6zJJVMW2FDi',
   },
 
   // Timeouts (ms)

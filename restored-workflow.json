@@ -1,0 +1,4870 @@
+{
+  "success": true,
+  "data": {
+    "updatedAt": "2026-02-26T03:00:03.367Z",
+    "createdAt": "2026-02-23T02:15:24.237Z",
+    "id": "qGdcGbOnLikzE3Jl",
+    "name": "Content Rewards Main Orchestration Workflow",
+    "description": null,
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "jsCode": "const r = $input.first().json;\nconst f = r.fields || {};\n\nreturn [{\n  json: {\n    ...r,\n    apiBaseUrl: \"http://159.69.14.7:3000\",\n    rawFields: f\n  }\n}];"
+        },
+        "id": "code-003",
+        "name": "3. Parse Campaign Config",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -128,
+          304
+        ],
+        "notes": "Parse Airtable campaign config into workflow variables"
+      },
+      {
+        "parameters": {
+          "jsCode": "const r=$input.first().json;\nlet d=r.content||[];\nlet t=d.length?d.map(w=>`[${fmt(w.offset||0)}] ${w.text||''}`).join('\\n'):'';\nfunction fmt(ms){\n  const s=Math.floor(ms/1000),m=Math.floor(s/60);\n  return`${m}:${(s%60).toString().padStart(2,'0')}`;\n}\nreturn[{json:{...r,transcript:t}}];"
+        },
+        "id": "code-005",
+        "name": "5. Parse Transcript",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          816,
+          304
+        ],
+        "notes": "Format transcript from Supadata API response"
+      },
+      {
+        "parameters": {
+          "jsCode": "const i=$input.first().json;\nconst isVision=i.vision_mode===true;\nconst visionClips=i.vision_clips||[];\nconst transcriptData=i.transcript||'';\nconst c=i.campaign_config||{};\n\n// FULL PROMPT 1 - Adapted for both modes\nconst prompt=`YOU ARE AN ELITE SHORT-FORM CONTENT STRATEGIST AND ATTENTION ENGINEER, RECOGNIZED FOR EXTRACTING MAXIMUM-VIRALITY CLIPS FROM VIDEO CONTENT. YOU HAVE DEEP EXPERTISE IN SCROLL-STOPPING PSYCHOLOGY, PLATFORM ALGORITHM MECHANICS, AND HOOK ARCHITECTURE ACROSS TIKTOK, INSTAGRAM REELS, AND YOUTUBE SHORTS.\n\nYOUR SOLE MISSION: Analyze the provided ${isVision?'video analysis and transcript':'transcript'} and identify the timestamp ranges that will generate the highest view counts when clipped and posted as short-form vertical video.\n\n---\n\n### THE 6-SECOND GATE \u2014 THE ENTIRE GAME\n\nData from 14,000 clips across Content Rewards campaigns reveals a single decisive variable:\n\n- Clips where 70%+ of viewers made it past second 6 averaged 120,000 views\n- Clips where under 40% made it past second 6 averaged 1,800 views\n- Same creators. Same campaigns. Same platforms. Only the opening differed.\n\nHOW THE ALGORITHM ACTUALLY WORKS: When you post a clip, the platform shows it to a test batch of 200-500 people and measures one thing \u2014 did they keep watching past 6 seconds? If retention is high, the clip gets pushed to a larger batch, then larger, then larger. Every distribution tier is gated by early retention. The entire game is won or lost before the viewer knows what the video is about.\n\nThis means: an average clip with an incredible first 6 seconds will outperform an incredible clip with an average opening every single time.\n\nTHE THREE ELEMENTS THAT WIN THE 6-SECOND GATE:\n1. PATTERN INTERRUPT \u2014 Something visually unexpected or aurally jarring in the first moment.\n2. OPEN LOOP \u2014 A statement in the first 6 seconds that NEEDS resolution.\n3. SPECIFIC NUMBER OR CREDIBLE DETAIL \u2014 \"14,999 in one week\" locks the brain 10x harder than \"a lot of money.\"\n\n---\n\n### PLATFORM INTELLIGENCE\n\nTIKTOK: Completion rate is the #1 distribution signal. First 0-3 seconds determine whether the algorithm pushes the clip. Pattern interrupts \u2014 mid-sentence entries, bold claims, unexpected starts \u2014 beat polished intros every time.\n\nINSTAGRAM REELS: Saves and shares outweigh likes. Hook must land in the first 1-2 seconds.\n\nYOUTUBE SHORTS: Watch time percentage is the primary rank signal. Curiosity gaps that tease a resolution force viewers to the end.\n\nTRIGGER TYPES THAT STOP THE SCROLL:\n- Controversy, Confession, Revelation, Conflict, Extreme Claim, Mid-Sentence Entry, Stakes Moment, Punchline\n\n---\n\n### INSTRUCTIONS\n\n1. SCAN the ${isVision?'video analysis':'transcript'} for Emotional Spike Moments using the trigger types above.\n\n2. SCORE each flagged moment on Hook Quality (1-10):\n   - Starts mid-action or mid-thought: +2\n   - Creates an unanswered question in the first 5 words: +2\n   - Contains emotional charge: +2\n   - Is niche-specific: +2\n   - Is specific not generic: +2\n   Only clips scoring 6+ proceed to Stage 3.\n\n3. EVALUATE THE 6-SECOND GATE for each passing clip:\n   - PATTERN INTERRUPT: Does the opening moment create disruption?\n   - OPEN LOOP: Does a statement create tension that forces continued watching?\n   - SPECIFIC DETAIL: Is there a number, name, or concrete claim in first 6 seconds?\n\n4. MAP the Retention Arc: [HOOK \u2192 TENSION BUILD \u2192 PAYOFF]\n   Adjust timestamps until all three elements exist within the clip.\n\n5. RANK and OUTPUT top 5-10 clips by hook score.\n\n---\n\n### WHAT NOT TO DO\n\n- NEVER score above 6 if the clip requires prior context\n- NEVER start a clip at a natural pause or sentence beginning \u2014 always mid-thought\n- NEVER output a clip where the payoff falls outside the timestamp range\n- DO NOT include clips under 15 seconds or over 90 seconds\n- NEVER output fewer than 5 clips\n- DO NOT overlap timestamp ranges between clips\n- NEVER ignore the hook_clip_timestamp field\n\n---\n\n### EXPECTED OUTPUT\n\nFORMAT: JSON\n\n${isVision?`\nVISION ANALYSIS (Gemini observed):\n${JSON.stringify(visionClips, null, 2)}\n\nTRANSCRIPT (what was said):\n${transcriptData}\n`:`\nTRANSCRIPT:\n${transcriptData}\n`}\n\nCAMPAIGN CONTEXT:\n- Campaign Name: ${c.campaign_name||'unknown'}\n- Platform: ${c.platform||'vertical_video'}\n- Length: ${c.clip_length_min||30}-${c.clip_length_max||90} seconds\n- Hashtags: ${(c.required_hashtags||[]).join(', ')||'none'}\n- Mentions: ${(c.required_mentions||[]).join(', ')||'none'}\n- Notes: ${c.campaign_notes||'none'}\n- Vision Mode: ${isVision?'ENABLED - using Gemini analysis':'DISABLED - using transcript only'}\n\n---\n\nReturn format:\n{\"rank\":1,\"hook_score\":9,\"timestamp_start\":\"MM:SS\",\"timestamp_end\":\"MM:SS\",\"duration_seconds\":46,\"trigger_type\":\"type\",\"opening_line\":\"text\",\"hook_clip_timestamp\":\"MM:SS\",\"six_second_gate\":{\"pattern_interrupt\":\"Yes/No\",\"open_loop\":\"Yes/No\",\"specific_detail\":\"Yes/No\",\"gate_verdict\":\"PASS/FAIL\"},\"why_it_hits\":\"explanation\",\"retention_arc\":{\"hook\":{\"timestamp\":\"MM:SS\",\"description\":\"text\"},\"tension\":{\"timestamp\":\"MM:SS\",\"description\":\"text\"},\"payoff\":{\"timestamp\":\"MM:SS\",\"description\":\"text\"}},\"platform_fit\":\"platform - reason\",\"risk_flags\":\"none\"};\n\nOutput the clips array.`;\n\nreturn[{json:{...i,prompt_1:prompt}}];\n"
+        },
+        "id": "code-006",
+        "name": "6. Build Prompt 1",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1440,
+          304
+        ],
+        "notes": "Build Prompt 1 - Full Prompt from clip-system-prompts.md adapted for dual mode: Normal (transcript) + Vision (Gemini analysis + transcript). Uses full Prompt 1 system with 6-second gate evaluation."
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.anthropic.com/v1/messages",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "anthropicApi",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Model Version",
+                "value": "claude-opus-4-6"
+              }
+            ]
+          },
+          "sendBody": true,
+          "bodyParameters": {
+            "parameters": [
+              {
+                "name": "model",
+                "value": "claude-opus-4-6"
+              },
+              {
+                "name": "max_tokens",
+                "value": 4096
+              },
+              {
+                "name": "messages",
+                "value": "=[{\"role\": \"user\", \"content\": $json.prompt_1}]"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 180000
+          }
+        },
+        "id": "http-007",
+        "name": "7. Claude - Find Clips",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          1664,
+          304
+        ],
+        "credentials": {
+          "anthropicApi": {
+            "id": "Cxv6lZXWoCzIcpGz",
+            "name": "Anthropic account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const r=$input.first().json,c=r.content?.[0]?.text||r.text||'';const m=c.match(/\\{[\\s\\S]*\\}/);let clips=[];if(m){try{const d=JSON.parse(m[0]);clips=d.clips||[];}catch{}}return[{json:{...r,clips:clips}}];"
+        },
+        "id": "code-008",
+        "name": "8. Parse Clips",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1888,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "authentication": "oAuth2",
+          "select": "channel",
+          "channelId": {
+            "__rl": true,
+            "value": "C0AGGJPPV5G",
+            "mode": "list",
+            "cachedResultName": "content-rewards"
+          },
+          "text": "=\ud83c\udfac *Select Clips*\\nClips found: {{$json.clipCount}}",
+          "otherOptions": {}
+        },
+        "id": "slack-010",
+        "name": "10. Slack - Select Clips",
+        "type": "n8n-nodes-base.slack",
+        "typeVersion": 2.4,
+        "position": [
+          2080,
+          304
+        ],
+        "webhookId": "73ec1e8b-8864-4af6-9709-39b9ce3082f1",
+        "credentials": {
+          "slackOAuth2Api": {
+            "id": "990tD5XQ81EHfgVM",
+            "name": "Slack account 2"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const s=$input.first().json,c=s.clips||[],sel=s.selected_clips||'1';const nums=sel.split(/[,;\\s]+/).map(n=>parseInt(n.trim())-1).filter(n=>!isNaN(n)&&n>=0&&n<c.length);return[{json:{...s,selectedClips:nums.map(i=>c[i]).filter(Boolean)}}];"
+        },
+        "id": "code-012",
+        "name": "12. Parse Selection",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2288,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "options": {}
+        },
+        "id": "loop-013",
+        "name": "13. Loop Over Clips",
+        "type": "n8n-nodes-base.splitInBatches",
+        "typeVersion": 3,
+        "position": [
+          2496,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "authentication": "oAuth2",
+          "select": "channel",
+          "channelId": {
+            "__rl": true,
+            "value": "C0AGGJPPV5G",
+            "mode": "list",
+            "cachedResultName": "content-rewards"
+          },
+          "text": "=\ud83c\udfac *Final Review*\\nRender status: {{$json.isComplete}}",
+          "otherOptions": {}
+        },
+        "id": "slack-029",
+        "name": "29. Slack - Final Review",
+        "type": "n8n-nodes-base.slack",
+        "typeVersion": 2.4,
+        "position": [
+          2720,
+          320
+        ],
+        "webhookId": "e004ff5b-d7a8-4905-92ab-64b36788921f",
+        "credentials": {
+          "slackOAuth2Api": {
+            "id": "990tD5XQ81EHfgVM",
+            "name": "Slack account 2"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const a=($input.first().json.approval||'').toLowerCase();return[{json:{...$input.first().json,isApproved:a==='approve'||a==='yes'}}];"
+        },
+        "id": "code-031",
+        "name": "31. Parse Final Decision",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2912,
+          320
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "create",
+          "base": {
+            "__rl": true,
+            "value": "=apprfl6zJJVMW2FDi",
+            "mode": "id"
+          },
+          "table": {
+            "__rl": true,
+            "value": "tbluyT0gdxmABh8TZ",
+            "mode": "list",
+            "cachedResultName": "CAMPAIGNS",
+            "cachedResultUrl": "https://airtable.com/apprfl6zJJVMW2FDi/tbluyT0gdxmABh8TZ"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "Budget": 0,
+              "Rate ($/1000 views)": 0,
+              "Clip Length Min (s)": 0,
+              "Clip Length Max (s)": 0,
+              "Status": "Active"
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "Client Name",
+                "displayName": "Client Name",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "string",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Status",
+                "displayName": "Status",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "options",
+                "options": [
+                  {
+                    "name": "Active",
+                    "value": "Active"
+                  },
+                  {
+                    "name": "Paused",
+                    "value": "Paused"
+                  },
+                  {
+                    "name": "Completed",
+                    "value": "Completed"
+                  },
+                  {
+                    "name": "Ready",
+                    "value": "Ready"
+                  }
+                ],
+                "readOnly": false,
+                "removed": false
+              },
+              {
+                "id": "Platform",
+                "displayName": "Platform",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "options",
+                "options": [
+                  {
+                    "name": "TikTok",
+                    "value": "TikTok"
+                  },
+                  {
+                    "name": "YouTube Shorts",
+                    "value": "YouTube Shorts"
+                  },
+                  {
+                    "name": "Instagram",
+                    "value": "Instagram"
+                  },
+                  {
+                    "name": "X",
+                    "value": "X"
+                  }
+                ],
+                "readOnly": false,
+                "removed": false
+              },
+              {
+                "id": "Budget",
+                "displayName": "Budget",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "number",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Rate ($/1000 views)",
+                "displayName": "Rate ($/1000 views)",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "number",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Required Hashtags",
+                "displayName": "Required Hashtags",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "array",
+                "options": [
+                  {
+                    "name": "Hashtag1",
+                    "value": "Hashtag1"
+                  }
+                ],
+                "readOnly": false,
+                "removed": false
+              },
+              {
+                "id": "Required Mentions",
+                "displayName": "Required Mentions",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "array",
+                "options": [
+                  {
+                    "name": "Mention1",
+                    "value": "Mention1"
+                  }
+                ],
+                "readOnly": false,
+                "removed": false
+              },
+              {
+                "id": "Caption Style",
+                "displayName": "Caption Style",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "options",
+                "options": [
+                  {
+                    "name": "Member POV",
+                    "value": "Member POV"
+                  },
+                  {
+                    "name": "Search-Optimized",
+                    "value": "Search-Optimized"
+                  },
+                  {
+                    "name": "UGC",
+                    "value": "UGC"
+                  }
+                ],
+                "readOnly": false,
+                "removed": false
+              },
+              {
+                "id": "Clip Length Min (s)",
+                "displayName": "Clip Length Min (s)",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "number",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Clip Length Max (s)",
+                "displayName": "Clip Length Max (s)",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "number",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Content Type",
+                "displayName": "Content Type",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "options",
+                "options": [
+                  {
+                    "name": "Clipping",
+                    "value": "Clipping"
+                  },
+                  {
+                    "name": "UGC",
+                    "value": "UGC"
+                  }
+                ],
+                "readOnly": false,
+                "removed": false
+              },
+              {
+                "id": "Social Accounts",
+                "displayName": "Social Accounts",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "array",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Notes",
+                "displayName": "Notes",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "string",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Start Date",
+                "displayName": "Start Date",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "dateTime",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "End Date",
+                "displayName": "End Date",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "dateTime",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Campaign Summary (AI)",
+                "displayName": "Campaign Summary (AI)",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "string",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "CLIPS",
+                "displayName": "CLIPS",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "array",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              }
+            ],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": false
+          },
+          "options": {}
+        },
+        "id": "airtable-032",
+        "name": "32. Create Airtable Record",
+        "type": "n8n-nodes-base.airtable",
+        "typeVersion": 2.1,
+        "position": [
+          3136,
+          320
+        ],
+        "credentials": {
+          "airtableTokenApi": {
+            "id": "q83hLaqB6n75LmRJ",
+            "name": "Airtable (N8N)"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "authentication": "oAuth2",
+          "select": "channel",
+          "channelId": {
+            "__rl": true,
+            "value": "C0AGGJPPV5G",
+            "mode": "list",
+            "cachedResultName": "content-rewards"
+          },
+          "text": "={{$json.isApproved?'\u2705 Approved':'\u274c Rejected'}}",
+          "otherOptions": {}
+        },
+        "id": "slack-033",
+        "name": "33. Slack - Complete",
+        "type": "n8n-nodes-base.slack",
+        "typeVersion": 2.4,
+        "position": [
+          3360,
+          320
+        ],
+        "webhookId": "42de59cf-796a-455e-9a89-c251ff8143f2",
+        "credentials": {
+          "slackOAuth2Api": {
+            "id": "990tD5XQ81EHfgVM",
+            "name": "Slack account 2"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "apiBaseUrl",
+                "name": "apiBaseUrl",
+                "value": "http://159.69.14.7:3000",
+                "type": "string"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "set-000",
+        "name": "0. Set API URL",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          -592,
+          288
+        ]
+      },
+      {
+        "parameters": {
+          "fieldToSplitOut": "clips",
+          "options": {}
+        },
+        "id": "split-out-new",
+        "name": "Split Out Clips",
+        "type": "n8n-nodes-base.splitOut",
+        "typeVersion": 1,
+        "position": [
+          2496,
+          160
+        ]
+      },
+      {
+        "parameters": {
+          "workflowId": "UD2mtYrRGArv3m5T",
+          "options": {}
+        },
+        "id": "execute-clip-sub",
+        "name": "Execute Clip Sub-Workflow",
+        "type": "n8n-nodes-base.executeWorkflow",
+        "typeVersion": 1,
+        "position": [
+          2720,
+          160
+        ]
+      },
+      {
+        "parameters": {
+          "pollTimes": {
+            "item": [
+              {
+                "mode": "everyMinute"
+              }
+            ]
+          },
+          "authentication": "airtableTokenApi",
+          "baseId": {
+            "__rl": true,
+            "value": "apprfl6zJJVMW2FDi",
+            "mode": "id",
+            "cachedResultName": "apprfl6zJJVMW2FDi"
+          },
+          "tableId": {
+            "__rl": true,
+            "value": "tbluyT0gdxmABh8TZ",
+            "mode": "id",
+            "cachedResultName": "tbluyT0gdxmABh8TZ"
+          },
+          "triggerField": "Status",
+          "additionalFields": {}
+        },
+        "id": "airtable-trigger-new",
+        "name": "Airtable Trigger",
+        "type": "n8n-nodes-base.airtableTrigger",
+        "typeVersion": 1,
+        "position": [
+          -1008,
+          304
+        ],
+        "credentials": {
+          "airtableTokenApi": {
+            "id": "q83hLaqB6n75LmRJ",
+            "name": "Airtable (N8N)"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 3
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $json.fields.Status }}",
+                "rightValue": "Ready",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals",
+                  "name": "filter.operator.equals"
+                },
+                "id": "condition-1771897873515-pm8koqnuy"
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {
+            "ignoreCase": false
+          }
+        },
+        "id": "if-status-ready",
+        "name": "IF Status = Ready",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          -816,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "authentication": "oAuth2",
+          "select": "channel",
+          "channelId": {
+            "__rl": true,
+            "value": "C0AGGJPPV5G",
+            "mode": "list",
+            "cachedResultName": "content-rewards"
+          },
+          "text": "\u26a0\ufe0f Airtable trigger fired but Status is not Ready. Current: {{$json.Status}}",
+          "otherOptions": {}
+        },
+        "id": "slack-wrong-status",
+        "name": "Slack - Wrong Status",
+        "type": "n8n-nodes-base.slack",
+        "typeVersion": 2.4,
+        "position": [
+          -704,
+          480
+        ],
+        "webhookId": "4b7e3927-4833-41ef-921b-5cb46a8e24fb",
+        "credentials": {
+          "slackOAuth2Api": {
+            "id": "990tD5XQ81EHfgVM",
+            "name": "Slack account 2"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const triggerData = $node[\"Airtable Trigger\"].json;\nconst f = triggerData.fields || {};\nconst rawLinks = f['Source Video Links'] || '';\n\nconst links = rawLinks.split(',').map(l => l.trim()).filter(l => l);\n\nconst currentData = $input.first().json;\n\nif (links.length === 0) {\n  return [{ json: { ...currentData, source_url: '', link_index: 0, total_links: 0 } }];\n}\n\nreturn links.map((link, i) => ({\n  json: { ...currentData, source_url: link, link_index: i, total_links: links.length }\n}));"
+        },
+        "id": "code-003b",
+        "name": "3b. Split Source Links",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          48,
+          304
+        ],
+        "notesInFlow": false,
+        "retryOnFail": false,
+        "alwaysOutputData": false,
+        "executeOnce": false,
+        "onError": "continueRegularOutput",
+        "notes": "Split comma-separated source links into individual workflow items"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 1
+            },
+            "conditions": [
+              {
+                "id": "duration-5min",
+                "leftValue": "={{ $json.content[$json.content.length - 1].offset / 1000 }}",
+                "operator": "<=",
+                "rightValue": "300"
+              },
+              {
+                "id": "b9289d11-d5ee-45e6-b1a3-b2aa70bfdb35",
+                "leftValue": "= {{ $json.content[$json.content.length - 1].offset / 1000 }}",
+                "rightValue": 300,
+                "operator": {
+                  "type": "number",
+                  "operation": "lte"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "if-004b",
+        "name": "5b. Check Duration (<5min?)",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [
+          1328,
+          64
+        ],
+        "notesInFlow": false,
+        "retryOnFail": false,
+        "executeOnce": false,
+        "onError": "continueRegularOutput",
+        "notes": "Check if video <=5 min - if yes, use Vision Mode. Check: max transcript offset <= 300 seconds"
+      },
+      {
+        "parameters": {
+          "jsCode": "const i=$input.first().json;\nconst v=i.source_url;\nconst c=i.campaign_config||{};\n\nconst p=`YOU ARE AN ELITE SHORT-FORM CONTENT STRATEGIST AND ATTENTION ENGINEER, RECOGNIZED FOR EXTRACTING MAXIMUM-VIRALITY CLIPS FROM VIDEO CONTENT. YOU HAVE DEEP EXPERTISE IN SCROLL-STOPPING PSYCHOLOGY, PLATFORM ALGORITHM MECHANICS, AND HOOK ARCHITECTURE ACROSS TIKTOK, INSTAGRAM REELS, AND YOUTUBE SHORTS.\n\nYOUR SOLE MISSION: Watch this video and identify the timestamp ranges that will generate the highest view counts when clipped and posted as short-form vertical video. Analyze BOTH the visual content AND any audio (speech, music, sound effects).\n\n### CONTEXT ###\n\nPLATFORM INTELLIGENCE:\n\nTIKTOK: Completion rate is the #1 distribution signal. First 0-3 seconds determine whether the algorithm pushes the clip. Pattern interrupts - mid-action entries, bold claims, unexpected starts - beat polished intros every time.\n\nINSTAGRAM REELS: Saves and shares outweigh likes. Hook must land in the first 1-2 seconds. Content people send to friends outperforms content people double-tap.\n\nYOUTUBE SHORTS: Watch time percentage is the primary rank signal. Curiosity gaps that tease a resolution force viewers to the end.\n\n### VIDEO ANALYSIS - WHAT TO LOOK FOR ###\n\nVISUAL HOOKS:\n- Sudden movement or action that stops the scroll\n- Expressive facial reactions\n- Text overlays or graphics that create curiosity\n- Unusual or surprising visuals\n- Pattern interrupts (unexpected camera angle, cut, visual change)\n\nAUDIO HOOKS:\n- Sudden volume change (music drop, louder speech)\n- Emotional tone shifts in voice\n- Music that creates tension or excitement\n- Silence/pause that creates anticipation\n- Key phrases or statements\n\nTRIGGER TYPES THAT STOP THE SCROLL:\n- Controversy: a claim that contradicts common belief\n- Confession: \"I was wrong\", \"nobody told me this\"\n- Revelation: information the viewer didn't know but now can't unknow\n- Conflict: tension between two ideas, people, or outcomes\n- Extreme Claim: a number, result, or statement that sounds impossible\n- Mid-Sentence Entry: drops viewer into the middle of a thought\n- Stakes Moment: something important is on the line\n- Punchline: a payoff that lands hard after a setup\n\n### INSTRUCTIONS ###\n\nExecute these 4 stages fully before producing output:\n\n1. WATCH the full video for Emotional Spike Moments using the trigger types above.\n\n2. SCORE each flagged moment on Hook Quality (1-10):\n   - Visual impact (starts with striking visual): +2\n   - Audio impact (strong audio hook): +2\n   - Creates an unanswered question in first 3 seconds: +2\n   - Emotional charge: +2\n   - Niche-specific content: +2\n   Only clips scoring 6+ proceed to Stage 3.\n\n3. MAP the Retention Arc: [HOOK -> TENSION BUILD -> PAYOFF]\n   Adjust timestamps until all three elements exist within the clip.\n   Discard clips that cannot form a complete arc.\n\n4. RANK and OUTPUT top 5-10 clips by hook score.\n\n### MUSIC/AUDIO ANALYSIS ###\n\nFor each clip, note:\n- Does the original video have background music? (Yes/No)\n- Is the music important to the clip's impact? (Yes/No - explain)\n- Should music be preserved or can it be replaced? (Preserve/Replace)\n\n### CHAIN OF THOUGHT ###\n\nFor each candidate clip:\n1. UNDERSTAND - What is actually happening in this moment?\n2. BASICS - What single emotion does it trigger in a first-time viewer?\n3. BREAK DOWN - Does this moment have a visual hook? Audio hook? Tension? Payoff?\n4. ANALYZE - Apply the +2 scoring system.\n5. BUILD - Finalize timestamps. Adjust for strongest hook and cleanest payoff.\n6. EDGE CASES - Does this clip make sense without the full context?\n7. FINAL ANSWER - Assign score. Include or discard. Rank it.\n\n### WHAT NOT TO DO ###\n\n- NEVER score above 6 if the clip requires prior context to be understood\n- NEVER start a clip at a natural pause or sentence beginning\n- NEVER output a clip where the payoff falls outside the timestamp range\n- DO NOT include clips under 15 seconds or over 90 seconds\n- NEVER output fewer than 5 clips unless the video genuinely has fewer moments\n- DO NOT overlap timestamp ranges between clips\n\n### EXPECTED OUTPUT ###\n\nFORMAT: JSON only. Output this exact schema:\n\n{\"campaign\":\"[Campaign Name]\",\"video_analyzed\":true,\"total_clips_identified\":0,\"clips\":[{\"rank\":1,\"hook_score\":9,\"timestamp_start\":\"MM:SS\",\"timestamp_end\":\"MM:SS\",\"duration_seconds\":46,\"trigger_type\":\"Visual + Audio Hook\",\"description\":\"What happens in this clip\",\"why_it_hits\":\"1-2 sentence psychological explanation\",\"audio_analysis\":{\"has_original_music\":true,\"music_important\":false,\"recommendation\":\"Preserve/Replace\"},\"retention_arc\":{\"hook\":{\"timestamp\":\"MM:SS\",\"description\":\"What the hook is\"},\"tension\":{\"timestamp\":\"MM:SS\",\"description\":\"What builds tension\"},\"payoff\":{\"timestamp\":\"MM:SS\",\"description\":\"What the payoff is\"}},\"platform_fit\":\"TikTok primary - reason why\",\"risk_flags\":\"None\"}]}\n\nCAMPAIGN CONTEXT:\n- Campaign Name: ${c.campaign_name||'unknown'}\n- Platform Target: ${c.platform||'tiktok'}\n- Clip Length Target: ${c.clip_length_min||30}-${c.clip_length_max||90} seconds\n- Required Hashtags: ${(c.required_hashtags||[]).join(', ')||'none'}\n- Required Mentions: ${(c.required_mentions||[]).join(', ')||'none'}`;\n\nreturn[{json:{...i,prompt_4:p,video_url:v}}];\n"
+        },
+        "id": "code-vision",
+        "name": "5c. Vision Mode - Analyze Video",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1552,
+          48
+        ],
+        "notesInFlow": false,
+        "retryOnFail": false,
+        "executeOnce": false,
+        "onError": "continueRegularOutput",
+        "notes": "Build detailed prompt for Gemini vision analysis"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyAvClnb6UPA5N7CrDQ_IntYZR9bNFlu0ns",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n  \"contents\": [\n    {\n      \"parts\": [\n        {\n          \"fileData\": {\n            \"mimeType\": \"video/mp4\",\n            \"fileUri\": \"{{ $json.source_url }}\"\n          }\n        },\n        {\n          \"text\": \"You are analyzing a video to identify viral clip moments. Identify 3-5 moments (15-60 seconds) that work well as short-form social media clips. For each moment provide: 1. Timestamp (start-end in MM:SS), 2. Description, 3. Why it's engaging. Return as JSON array.\"\n        }\n      ]\n    }\n  ]\n}",
+          "options": {
+            "timeout": 120000
+          }
+        },
+        "id": "http-gemini",
+        "name": "5d. Gemini Vision - Call API",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          1776,
+          48
+        ],
+        "notesInFlow": false,
+        "retryOnFail": false,
+        "executeOnce": false,
+        "onError": "continueRegularOutput",
+        "notes": "Call Gemini API to analyze video for viral moments"
+      },
+      {
+        "parameters": {
+          "jsCode": "const i=$input.first().json;\nconst r=i.response||{};\nconst candidates=r.candidates||[];\nconst content=candidates[0]?.content||{};\nconst parts=content.parts||[];\nconst text=parts.map(p=>p.text||'').join('');\n\n// Try to parse JSON from Gemini response\nlet clips=[];\ntry{\n  const jsonMatch=text.match(/\\[[\\s\\S]*\\]/);\n  if(jsonMatch){\n    clips=JSON.parse(jsonMatch[0]);\n  }\n}catch(e){\n  // If JSON parse fails, create structured data from text\n  clips=[{\n    rank:1,\n    hook_score:8,\n    description:text.substring(0,200),\n    why_it_hits:'Vision analysis from Gemini'\n  }];\n}\n\nreturn[{json:{...i,vision_clips:clips,vision_mode:true,transcript:text}}];"
+        },
+        "id": "code-5e",
+        "name": "5e. Parse Vision Response",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2000,
+          48
+        ],
+        "notesInFlow": false,
+        "retryOnFail": false,
+        "executeOnce": false,
+        "onError": "continueRegularOutput",
+        "notes": "Parse Gemini vision API response into clip format for Build Prompt 1"
+      },
+      {
+        "parameters": {},
+        "id": "error-trigger-main",
+        "name": "On Workflow Error",
+        "type": "n8n-nodes-base.errorTrigger",
+        "typeVersion": 1,
+        "position": [
+          -912,
+          672
+        ],
+        "notesInFlow": true,
+        "notes": "Fires on any node failure in the workflow"
+      },
+      {
+        "parameters": {
+          "authentication": "oAuth2",
+          "select": "channel",
+          "channelId": {
+            "__rl": true,
+            "value": "C0AGGJPPV5G",
+            "mode": "list",
+            "cachedResultName": "content-rewards"
+          },
+          "text": "=\ud83d\udea8 *Content Rewards Workflow Error*\n\n*Workflow:* {{ $json.workflow.name }}\n*Failed at:* {{ $json.execution.lastNodeExecuted }}\n*Error:* {{ $json.execution.error.message }}\n*Execution ID:* `{{ $json.execution.id }}`\n\n_View in N8N: <{{ $json.execution.url }}|Execution Log>_",
+          "otherOptions": {}
+        },
+        "id": "slack-alert-main",
+        "name": "Alert on Error",
+        "type": "n8n-nodes-base.slack",
+        "typeVersion": 2.4,
+        "position": [
+          -688,
+          672
+        ],
+        "notesInFlow": true,
+        "webhookId": "1d2b2f8e-0acb-4789-9e76-448f4d582f39",
+        "credentials": {
+          "slackOAuth2Api": {
+            "id": "990tD5XQ81EHfgVM",
+            "name": "Slack account 2"
+          }
+        },
+        "notes": "Sends error notification to Slack"
+      },
+      {
+        "parameters": {
+          "jsCode": "const fields = $input.first().json.fields || {};\nconst resumeIndex = fields['Last Processed Clip Index'] || 0;\n\nreturn [{\n  json: {\n    ...$input.first().json,\n    resumeIndex: resumeIndex,\n    isResume: resumeIndex > 0\n  }\n}];"
+        },
+        "id": "code-resume-check",
+        "name": "3c. Check Resume Index",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -320,
+          304
+        ],
+        "notesInFlow": true,
+        "notes": "Extract resume index from Airtable to skip already-processed clips"
+      },
+      {
+        "parameters": {
+          "operation": "update",
+          "base": {
+            "__rl": true,
+            "mode": "id",
+            "value": "apprfl6zJJVMW2FDi",
+            "cachedResultName": "apprfl6zJJVMW2FDi"
+          },
+          "table": {
+            "__rl": true,
+            "mode": "id",
+            "value": "tbluyT0gdxmABh8TZ",
+            "cachedResultName": "tbluyT0gdxmABh8TZ"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "Total Clips Identified": 0,
+              "Clip Length Max (s)": 0,
+              "Clip Length Min (s)": 0,
+              "Rate ($/1000 views)": 0,
+              "Budget": 0,
+              "Last Processed Clip Index": "={{ $json.index }}"
+            },
+            "matchingColumns": [
+              "id"
+            ],
+            "schema": [
+              {
+                "id": "id",
+                "displayName": "id",
+                "required": false,
+                "defaultMatch": true,
+                "display": true,
+                "type": "string",
+                "readOnly": true,
+                "removed": false,
+                "canBeUsedToMatch": true,
+                "options": []
+              },
+              {
+                "id": "Client Name",
+                "displayName": "Client Name",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "string",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Status",
+                "displayName": "Status",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "options",
+                "options": [
+                  {
+                    "name": "Active",
+                    "value": "Active"
+                  },
+                  {
+                    "name": "Paused",
+                    "value": "Paused"
+                  },
+                  {
+                    "name": "Completed",
+                    "value": "Completed"
+                  },
+                  {
+                    "name": "Ready",
+                    "value": "Ready"
+                  },
+                  {
+                    "name": "Processing",
+                    "value": "Processing"
+                  }
+                ],
+                "readOnly": false,
+                "removed": false
+              },
+              {
+                "id": "Platform",
+                "displayName": "Platform",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "array",
+                "options": [
+                  {
+                    "name": "TikTok",
+                    "value": "TikTok"
+                  },
+                  {
+                    "name": "YouTube Shorts",
+                    "value": "YouTube Shorts"
+                  },
+                  {
+                    "name": "Instagram",
+                    "value": "Instagram"
+                  },
+                  {
+                    "name": "X",
+                    "value": "X"
+                  }
+                ],
+                "readOnly": false,
+                "removed": false
+              },
+              {
+                "id": "Budget",
+                "displayName": "Budget",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "number",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Source Video Links",
+                "displayName": "Source Video Links",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "string",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Rate ($/1000 views)",
+                "displayName": "Rate ($/1000 views)",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "number",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Required Hashtags",
+                "displayName": "Required Hashtags",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "array",
+                "options": [
+                  {
+                    "name": "Hashtag1",
+                    "value": "Hashtag1"
+                  },
+                  {
+                    "name": "#Ad #Advertisement #Sponsored",
+                    "value": "#Ad #Advertisement #Sponsored"
+                  },
+                  {
+                    "name": "#Ad",
+                    "value": "#Ad"
+                  },
+                  {
+                    "name": "#Sponsored",
+                    "value": "#Sponsored"
+                  },
+                  {
+                    "name": "#Advertisement ",
+                    "value": "#Advertisement "
+                  }
+                ],
+                "readOnly": false,
+                "removed": false
+              },
+              {
+                "id": "Required Mentions",
+                "displayName": "Required Mentions",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "array",
+                "options": [
+                  {
+                    "name": "Mention1",
+                    "value": "Mention1"
+                  },
+                  {
+                    "name": "@callofduty",
+                    "value": "@callofduty"
+                  }
+                ],
+                "readOnly": false,
+                "removed": false
+              },
+              {
+                "id": "Caption Style",
+                "displayName": "Caption Style",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "options",
+                "options": [
+                  {
+                    "name": "Member POV",
+                    "value": "Member POV"
+                  },
+                  {
+                    "name": "Search-Optimized",
+                    "value": "Search-Optimized"
+                  },
+                  {
+                    "name": "UGC",
+                    "value": "UGC"
+                  }
+                ],
+                "readOnly": false,
+                "removed": false
+              },
+              {
+                "id": "Clip Length Min (s)",
+                "displayName": "Clip Length Min (s)",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "number",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Clip Length Max (s)",
+                "displayName": "Clip Length Max (s)",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "number",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Content Type",
+                "displayName": "Content Type",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "options",
+                "options": [
+                  {
+                    "name": "Clipping",
+                    "value": "Clipping"
+                  },
+                  {
+                    "name": "UGC",
+                    "value": "UGC"
+                  }
+                ],
+                "readOnly": false,
+                "removed": false
+              },
+              {
+                "id": "Social Accounts",
+                "displayName": "Social Accounts",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "array",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Notes",
+                "displayName": "Notes",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "string",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Last Processed Clip Index",
+                "displayName": "Last Processed Clip Index",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "number",
+                "readOnly": false,
+                "options": []
+              },
+              {
+                "id": "Total Clips Identified",
+                "displayName": "Total Clips Identified",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "number",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Start Date",
+                "displayName": "Start Date",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "dateTime",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "End Date",
+                "displayName": "End Date",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "dateTime",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Campaign Summary (AI)",
+                "displayName": "Campaign Summary (AI)",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "string",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "CLIPS",
+                "displayName": "CLIPS",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "array",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              }
+            ],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": false
+          },
+          "options": {}
+        },
+        "id": "airtable-update-progress",
+        "name": "33b. Update Progress Index",
+        "type": "n8n-nodes-base.airtable",
+        "typeVersion": 2.1,
+        "position": [
+          3568,
+          320
+        ],
+        "notesInFlow": true,
+        "credentials": {
+          "airtableTokenApi": {
+            "id": "q83hLaqB6n75LmRJ",
+            "name": "Airtable (N8N)"
+          }
+        },
+        "notes": "Save current clip index to Airtable for resume capability"
+      },
+      {
+        "parameters": {
+          "operation": "update",
+          "base": {
+            "__rl": true,
+            "mode": "id",
+            "value": "apprfl6zJJVMW2FDi",
+            "cachedResultName": "apprfl6zJJVMW2FDi"
+          },
+          "table": {
+            "__rl": true,
+            "mode": "id",
+            "value": "tbluyT0gdxmABh8TZ",
+            "cachedResultName": "tbluyT0gdxmABh8TZ"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "Last Processed Clip Index": 0,
+              "Clip Length Max (s)": 0,
+              "Clip Length Min (s)": 0,
+              "Rate ($/1000 views)": 0,
+              "Budget": 0,
+              "Total Clips Identified": "={{ $json.clips.length }}"
+            },
+            "matchingColumns": [
+              "id"
+            ],
+            "schema": [
+              {
+                "id": "id",
+                "displayName": "id",
+                "required": false,
+                "defaultMatch": true,
+                "display": true,
+                "type": "string",
+                "readOnly": true,
+                "removed": false,
+                "canBeUsedToMatch": true,
+                "options": []
+              },
+              {
+                "id": "Client Name",
+                "displayName": "Client Name",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "string",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Status",
+                "displayName": "Status",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "options",
+                "options": [
+                  {
+                    "name": "Active",
+                    "value": "Active"
+                  },
+                  {
+                    "name": "Paused",
+                    "value": "Paused"
+                  },
+                  {
+                    "name": "Completed",
+                    "value": "Completed"
+                  },
+                  {
+                    "name": "Ready",
+                    "value": "Ready"
+                  },
+                  {
+                    "name": "Processing",
+                    "value": "Processing"
+                  }
+                ],
+                "readOnly": false,
+                "removed": false
+              },
+              {
+                "id": "Platform",
+                "displayName": "Platform",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "array",
+                "options": [
+                  {
+                    "name": "TikTok",
+                    "value": "TikTok"
+                  },
+                  {
+                    "name": "YouTube Shorts",
+                    "value": "YouTube Shorts"
+                  },
+                  {
+                    "name": "Instagram",
+                    "value": "Instagram"
+                  },
+                  {
+                    "name": "X",
+                    "value": "X"
+                  }
+                ],
+                "readOnly": false,
+                "removed": false
+              },
+              {
+                "id": "Budget",
+                "displayName": "Budget",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "number",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Source Video Links",
+                "displayName": "Source Video Links",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "string",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Rate ($/1000 views)",
+                "displayName": "Rate ($/1000 views)",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "number",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Required Hashtags",
+                "displayName": "Required Hashtags",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "array",
+                "options": [
+                  {
+                    "name": "Hashtag1",
+                    "value": "Hashtag1"
+                  },
+                  {
+                    "name": "#Ad #Advertisement #Sponsored",
+                    "value": "#Ad #Advertisement #Sponsored"
+                  },
+                  {
+                    "name": "#Ad",
+                    "value": "#Ad"
+                  },
+                  {
+                    "name": "#Sponsored",
+                    "value": "#Sponsored"
+                  },
+                  {
+                    "name": "#Advertisement ",
+                    "value": "#Advertisement "
+                  }
+                ],
+                "readOnly": false,
+                "removed": false
+              },
+              {
+                "id": "Required Mentions",
+                "displayName": "Required Mentions",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "array",
+                "options": [
+                  {
+                    "name": "Mention1",
+                    "value": "Mention1"
+                  },
+                  {
+                    "name": "@callofduty",
+                    "value": "@callofduty"
+                  }
+                ],
+                "readOnly": false,
+                "removed": false
+              },
+              {
+                "id": "Caption Style",
+                "displayName": "Caption Style",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "options",
+                "options": [
+                  {
+                    "name": "Member POV",
+                    "value": "Member POV"
+                  },
+                  {
+                    "name": "Search-Optimized",
+                    "value": "Search-Optimized"
+                  },
+                  {
+                    "name": "UGC",
+                    "value": "UGC"
+                  }
+                ],
+                "readOnly": false,
+                "removed": false
+              },
+              {
+                "id": "Clip Length Min (s)",
+                "displayName": "Clip Length Min (s)",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "number",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Clip Length Max (s)",
+                "displayName": "Clip Length Max (s)",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "number",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Content Type",
+                "displayName": "Content Type",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "options",
+                "options": [
+                  {
+                    "name": "Clipping",
+                    "value": "Clipping"
+                  },
+                  {
+                    "name": "UGC",
+                    "value": "UGC"
+                  }
+                ],
+                "readOnly": false,
+                "removed": false
+              },
+              {
+                "id": "Social Accounts",
+                "displayName": "Social Accounts",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "array",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Notes",
+                "displayName": "Notes",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "string",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Last Processed Clip Index",
+                "displayName": "Last Processed Clip Index",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "number",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Total Clips Identified",
+                "displayName": "Total Clips Identified",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "number",
+                "readOnly": false,
+                "options": []
+              },
+              {
+                "id": "Start Date",
+                "displayName": "Start Date",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "dateTime",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "End Date",
+                "displayName": "End Date",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "dateTime",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "Campaign Summary (AI)",
+                "displayName": "Campaign Summary (AI)",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "string",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              },
+              {
+                "id": "CLIPS",
+                "displayName": "CLIPS",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "array",
+                "readOnly": false,
+                "removed": false,
+                "options": []
+              }
+            ],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": false
+          },
+          "options": {}
+        },
+        "id": "airtable-update-total",
+        "name": "12b. Update Total Clips",
+        "type": "n8n-nodes-base.airtable",
+        "typeVersion": 2.1,
+        "position": [
+          2496,
+          448
+        ],
+        "notesInFlow": true,
+        "credentials": {
+          "airtableTokenApi": {
+            "id": "q83hLaqB6n75LmRJ",
+            "name": "Airtable (N8N)"
+          }
+        },
+        "notes": "Save total clips count to Airtable for resume tracking"
+      },
+      {
+        "parameters": {
+          "jsCode": "const triggerData = $node[\"Airtable Trigger\"].json;\nconst f = triggerData.fields || {};\n\nconst hashtags = f['Required Hashtags'] || [];\nconst mentions = f['Required Mentions'] || [];\n\nconst currentData = $input.first().json;\nconst idx = currentData.link_index || 0;\n\nconst hashtagIdx = hashtags.length > 0 ? idx % hashtags.length : 0;\nconst mentionIdx = mentions.length > 0 ? idx % mentions.length : 0;\n\nreturn [{\n  json: {\n    ...currentData,\n    current_hashtag: hashtags[hashtagIdx] || '',\n    current_mention: mentions[mentionIdx] || '',\n    hashtag_index: hashtagIdx,\n    mention_index: mentionIdx\n  }\n}];"
+        },
+        "id": "647770b2-15e5-47b3-bf54-bed65266de52",
+        "name": "3d. Hashtag & Mention Cycling",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          240,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const r = $input.first().json;\nlet url = r.source_url || '';\nlet sourceType = 'unknown';\nlet requiresUpload = false;\n\nif (url.includes('drive.google.com')) {\n  sourceType = 'google_drive';\n  requiresUpload = true;\n} else if (url.includes('youtube.com') || url.includes('youtu.be')) {\n  sourceType = 'youtube';\n} else if (url.includes('tiktok.com')) {\n  sourceType = 'tiktok';\n} else if (url.includes('instagram.com')) {\n  sourceType = 'instagram';\n} else if (url.includes('.mp4') || url.includes('.webm') || url.includes('.s3.')) {\n  sourceType = 'direct_file';\n}\n\nreturn [{\n  json: {\n    ...r,\n    source_type: sourceType,\n    requires_upload: requiresUpload,\n    note: requiresUpload ? 'Google Drive requires download + S3 upload before Supadata' : ''\n  }\n}];"
+        },
+        "id": "40976d71-4c37-43ba-b4b9-370070c28334",
+        "name": "3f. Drive Link Detector",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          432,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 3
+            },
+            "conditions": [
+              {
+                "id": "uuid",
+                "leftValue": "={{ $json.source_type }}",
+                "operator": {
+                  "name": "filter.operator.equals",
+                  "operation": "equals",
+                  "type": "string"
+                },
+                "rightValue": "google_drive"
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "if-drive-check",
+        "name": "IF - Google Drive?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          -320,
+          144
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "download",
+          "fileId": {
+            "__rl": true,
+            "value": "={{ $json.driveFileId }}",
+            "mode": "id"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.googleDrive",
+        "typeVersion": 3,
+        "position": [
+          176,
+          128
+        ],
+        "id": "1831262b-a9c5-4256-981b-c959892020fa",
+        "name": "Download file",
+        "credentials": {
+          "googleDriveOAuth2Api": {
+            "id": "LZkdCleCACJgsylq",
+            "name": "Google Drive account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "upload",
+          "bucketName": "synteo-video",
+          "fileName": "={{ \"video-\" + $json.driveFileId + \".mp4\" }}",
+          "additionalFields": {}
+        },
+        "type": "n8n-nodes-base.s3",
+        "typeVersion": 1,
+        "position": [
+          320,
+          128
+        ],
+        "id": "0990735e-2a90-4b78-b38f-705baf493072",
+        "name": "Upload a file",
+        "credentials": {
+          "s3": {
+            "id": "gsJ9BDXBPNjCh24F",
+            "name": "S3 account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $input.first().json;\nconst sourceUrl = input.source_url || '';\n\nlet driveFileId = '';\nconst match1 = sourceUrl.match(/\\/d\\/([a-zA-Z0-9_-]+)\\//);\nconst match2 = sourceUrl.match(/\\/file\\/d\\/([a-zA-Z0-9_-]+)\\//);\n\nif (match1 && match1[1]) {\n  driveFileId = match1[1];\n} else if (match2 && match2[1]) {\n  driveFileId = match2[1];\n}\n\nreturn [{\n  json: {\n    ...input,\n    driveFileId: driveFileId\n  }\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -128,
+          128
+        ],
+        "id": "a5de45fc-46c4-4d4c-99e2-557faf3485eb",
+        "name": "Code in JavaScript"
+      },
+      {
+        "parameters": {
+          "jsCode": "const driveFileId = $('Download file').first().json.driveFileId;\nconst s3Url = \"https://synteo-video.s3.us-east-1.amazonaws.com/video-\" + driveFileId + \".mp4\";\n\nreturn [{\n  json: {\n    ...$input.first().json,\n    s3_url: s3Url,\n    source_type: 's3'\n  }\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          496,
+          128
+        ],
+        "id": "9c38675b-11a4-4f31-a3ee-b0d45ee97c31",
+        "name": "Code in JavaScript1"
+      },
+      {
+        "parameters": {
+          "operation": "deleteFile",
+          "fileId": {
+            "__rl": true,
+            "value": "={{ $('Download file').item.json.driveFileId }}",
+            "mode": "id"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.googleDrive",
+        "typeVersion": 3,
+        "position": [
+          672,
+          128
+        ],
+        "id": "6fad1142-a169-4f71-a8b6-7eec51b92ff2",
+        "name": "Delete a file",
+        "credentials": {
+          "googleDriveOAuth2Api": {
+            "id": "LZkdCleCACJgsylq",
+            "name": "Google Drive account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "copy",
+          "fileId": {
+            "__rl": true,
+            "value": "={{ $json.driveFileId }}",
+            "mode": "id"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.googleDrive",
+        "typeVersion": 3,
+        "position": [
+          32,
+          128
+        ],
+        "id": "df035925-084c-47c6-bbdb-d267b08981a6",
+        "name": "Copy file",
+        "credentials": {
+          "googleDriveOAuth2Api": {
+            "id": "LZkdCleCACJgsylq",
+            "name": "Google Drive account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "getTranscript",
+          "videoUrl": "={{ $json.source_url1 }}"
+        },
+        "type": "n8n-nodes-supadata.supadata",
+        "typeVersion": 1,
+        "position": [
+          624,
+          304
+        ],
+        "id": "3b8a3625-cb74-40b9-a7aa-0d748749d1bd",
+        "name": "Get transcript",
+        "credentials": {
+          "supadataApi": {
+            "id": "JDX9wtWcopK7mBYf",
+            "name": "Supadata account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{$json.apiBaseUrl}}/media/transcribe",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "openAiApi",
+          "sendBody": true,
+          "bodyParameters": {
+            "parameters": [
+              {}
+            ]
+          },
+          "options": {
+            "timeout": 120000
+          }
+        },
+        "id": "ad8455bf-f1da-484b-8b8a-3a55bfee8b58",
+        "name": "3a. Whisper Hook Clip",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          832,
+          128
+        ]
+      }
+    ],
+    "connections": {
+      "3. Parse Campaign Config": {
+        "main": [
+          [
+            {
+              "node": "3b. Split Source Links",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "5. Parse Transcript": {
+        "main": [
+          [
+            {
+              "node": "5b. Check Duration (<5min?)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "6. Build Prompt 1": {
+        "main": [
+          [
+            {
+              "node": "7. Claude - Find Clips",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "7. Claude - Find Clips": {
+        "main": [
+          [
+            {
+              "node": "8. Parse Clips",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "8. Parse Clips": {
+        "main": [
+          [
+            {
+              "node": "10. Slack - Select Clips",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "10. Slack - Select Clips": {
+        "main": [
+          [
+            {
+              "node": "12. Parse Selection",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "12. Parse Selection": {
+        "main": [
+          [
+            {
+              "node": "12b. Update Total Clips",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "13. Loop Over Clips": {
+        "main": [
+          [
+            {
+              "node": "Split Out Clips",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "29. Slack - Final Review",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "29. Slack - Final Review": {
+        "main": [
+          [
+            {
+              "node": "31. Parse Final Decision",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "31. Parse Final Decision": {
+        "main": [
+          [
+            {
+              "node": "32. Create Airtable Record",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "32. Create Airtable Record": {
+        "main": [
+          [
+            {
+              "node": "33. Slack - Complete",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "33. Slack - Complete": {
+        "main": [
+          [
+            {
+              "node": "13. Loop Over Clips",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "33b. Update Progress Index",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "0. Set API URL": {
+        "main": [
+          [
+            {
+              "node": "3c. Check Resume Index",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Split Out Clips": {
+        "main": [
+          [
+            {
+              "node": "Execute Clip Sub-Workflow",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Execute Clip Sub-Workflow": {
+        "main": [
+          [
+            {
+              "node": "32. Create Airtable Record",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Airtable Trigger": {
+        "main": [
+          [
+            {
+              "node": "IF Status = Ready",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "IF Status = Ready": {
+        "main": [
+          [
+            {
+              "node": "0. Set API URL",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Slack - Wrong Status",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "3b. Split Source Links": {
+        "main": [
+          [
+            {
+              "node": "3d. Hashtag & Mention Cycling",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "5b. Check Duration (<5min?)": {
+        "main": [
+          [
+            {
+              "node": "5c. Vision Mode - Analyze Video",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "6. Build Prompt 1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "5c. Vision Mode - Analyze Video": {
+        "main": [
+          [
+            {
+              "node": "5d. Gemini Vision - Call API",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "5d. Gemini Vision - Call API": {
+        "main": [
+          [
+            {
+              "node": "5e. Parse Vision Response",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "5e. Parse Vision Response": {
+        "main": [
+          [
+            {
+              "node": "6. Build Prompt 1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "On Workflow Error": {
+        "main": [
+          [
+            {
+              "node": "Alert on Error",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "33b. Update Progress Index": {
+        "main": [
+          [
+            {
+              "node": "13. Loop Over Clips",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "12b. Update Total Clips": {
+        "main": [
+          [
+            {
+              "node": "13. Loop Over Clips",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "3d. Hashtag & Mention Cycling": {
+        "main": [
+          [
+            {
+              "node": "3f. Drive Link Detector",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "3c. Check Resume Index": {
+        "main": [
+          [
+            {
+              "node": "3. Parse Campaign Config",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "3f. Drive Link Detector": {
+        "main": [
+          [
+            {
+              "node": "IF - Google Drive?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "IF - Google Drive?": {
+        "main": [
+          [
+            {
+              "node": "Code in JavaScript",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Get transcript",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Download file": {
+        "main": [
+          [
+            {
+              "node": "Upload a file",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code in JavaScript": {
+        "main": [
+          [
+            {
+              "node": "Copy file",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Upload a file": {
+        "main": [
+          [
+            {
+              "node": "Code in JavaScript1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code in JavaScript1": {
+        "main": [
+          [
+            {
+              "node": "Delete a file",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Copy file": {
+        "main": [
+          [
+            {
+              "node": "Download file",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get transcript": {
+        "main": [
+          [
+            {
+              "node": "5. Parse Transcript",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Delete a file": {
+        "main": [
+          [
+            {
+              "node": "3a. Whisper Hook Clip",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "saveDataErrorExecution": "all",
+      "saveDataSuccessExecution": "all",
+      "saveManualExecutions": true,
+      "saveExecutionProgress": true,
+      "callerPolicy": "workflowsFromSameOwner",
+      "availableInMCP": false
+    },
+    "staticData": {
+      "node:Airtable Trigger": {
+        "lastTimeChecked": "2026-02-26T01:35:39Z"
+      }
+    },
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "pinData": {
+      "Airtable Trigger": [
+        {
+          "json": {
+            "id": "recAkySh6xjqXkELM",
+            "createdTime": "2026-02-24T15:22:25.000Z",
+            "fields": {
+              "Client Name": "Call of Duty",
+              "Status": "Ready",
+              "Platform": [
+                "TikTok",
+                "Instagram"
+              ],
+              "Budget": 10000,
+              "Rate ($/1000 views)": 1,
+              "Required Hashtags": [
+                "#Ad",
+                "#Sponsored",
+                "#Advertisement "
+              ],
+              "Required Mentions": [
+                "@callofduty"
+              ],
+              "Caption Style": "Member POV",
+              "Clip Length Min (s)": 15,
+              "Clip Length Max (s)": 60,
+              "Content Type": "Clipping",
+              "Notes": "Season 02 / Rebirth Island Clipping Campaign. Use official assets only from Google Drive. Must include #Ad at BEGINNING of caption. English content only. Keep posts live 30+ days. 1% engagement rate minimum. Required Hashtags (Choose 1): #Ad #Advertisement #Sponsored. Required Mention: @callofduty",
+              "Campaign Summary (AI)": {
+                "state": "empty",
+                "value": null,
+                "isStale": true
+              },
+              "Source Video Links": "https://drive.google.com/file/d/1udPaDe6ZG8QLmwIgd4Jfe3GvZXB4x91T/view?usp=drive_link, https://drive.google.com/file/d/1zXGsbyDx9Nnp9S0tdRZENFjylALjwrli/view?usp=drive_link"
+            }
+          },
+          "pairedItem": {
+            "item": 0
+          }
+        }
+      ],
+      "Upload a file": [
+        {
+          "json": {
+            "success": true
+          },
+          "pairedItem": {
+            "item": 0
+          }
+        }
+      ],
+      "Download file": [
+        {
+          "json": {
+            "apiBaseUrl": "http://159.69.14.7:3000",
+            "resumeIndex": 0,
+            "isResume": false,
+            "rawFields": {},
+            "source_url": "https://drive.google.com/file/d/1udPaDe6ZG8QLmwIgd4Jfe3GvZXB4x91T/view?usp=drive_link",
+            "link_index": 0,
+            "total_links": 2,
+            "current_hashtag": "#Ad",
+            "current_mention": "@callofduty",
+            "hashtag_index": 0,
+            "mention_index": 0,
+            "source_type": "google_drive",
+            "requires_upload": true,
+            "note": "Google Drive requires download + S3 upload before Supadata",
+            "driveFileId": "1udPaDe6ZG8QLmwIgd4Jfe3GvZXB4x91T"
+          },
+          "binary": {
+            "data": {
+              "mimeType": "video/mp4",
+              "fileType": "video",
+              "fileExtension": "mp4",
+              "data": "filesystem-v2",
+              "fileName": "Season 02 Launch Trailer.mp4",
+              "id": "filesystem-v2:workflows/qGdcGbOnLikzE3Jl/executions/625/binary_data/3ebdb76b-c487-4543-a902-c9d46dbffeff",
+              "fileSize": "848 MB",
+              "bytes": 848421651
+            }
+          },
+          "pairedItem": {
+            "item": 0
+          }
+        }
+      ]
+    },
+    "versionId": "af45015e-724a-419b-bba7-eac2520e8ac5",
+    "activeVersionId": "fd147a9c-fdfb-4f59-8b52-d0cb94f3ad1e",
+    "versionCounter": 903,
+    "triggerCount": 1,
+    "shared": [
+      {
+        "updatedAt": "2026-02-23T02:15:24.237Z",
+        "createdAt": "2026-02-23T02:15:24.237Z",
+        "role": "workflow:owner",
+        "workflowId": "qGdcGbOnLikzE3Jl",
+        "projectId": "A7akMw1gIlGCkW5m",
+        "project": {
+          "updatedAt": "2025-09-23T20:41:10.020Z",
+          "createdAt": "2025-09-23T20:21:17.231Z",
+          "id": "A7akMw1gIlGCkW5m",
+          "name": "Adam Drapkin <adrapkin04@gmail.com>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "creatorId": "4e8cb80e-ac4b-46c2-aac1-8e028b4c0817"
+        }
+      }
+    ],
+    "tags": [],
+    "activeVersion": {
+      "updatedAt": "2026-02-26T01:35:39.188Z",
+      "createdAt": "2026-02-26T01:35:39.188Z",
+      "versionId": "fd147a9c-fdfb-4f59-8b52-d0cb94f3ad1e",
+      "workflowId": "qGdcGbOnLikzE3Jl",
+      "nodes": [
+        {
+          "id": "code-003",
+          "name": "3. Parse Campaign Config",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [
+            -128,
+            304
+          ],
+          "parameters": {
+            "jsCode": "const r = $input.first().json;\nconst f = r.fields || {};\n\nreturn [{\n  json: {\n    ...r,\n    apiBaseUrl: \"http://159.69.14.7:3000\",\n    rawFields: f\n  }\n}];"
+          },
+          "notes": "Parse Airtable campaign config into workflow variables"
+        },
+        {
+          "id": "code-005",
+          "name": "5. Parse Transcript",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [
+            1008,
+            304
+          ],
+          "parameters": {
+            "jsCode": "const r=$input.first().json;\nlet d=r.content||[];\nlet t=d.length?d.map(w=>`[${fmt(w.offset||0)}] ${w.text||''}`).join('\\n'):'';\nfunction fmt(ms){\n  const s=Math.floor(ms/1000),m=Math.floor(s/60);\n  return`${m}:${(s%60).toString().padStart(2,'0')}`;\n}\nreturn[{json:{...r,transcript:t}}];"
+          },
+          "notes": "Format transcript from Supadata API response"
+        },
+        {
+          "id": "code-006",
+          "name": "6. Build Prompt 1",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [
+            1232,
+            304
+          ],
+          "parameters": {
+            "jsCode": "const i=$input.first().json;\nconst isVision=i.vision_mode===true;\nconst visionClips=i.vision_clips||[];\nconst transcriptData=i.transcript||'';\nconst c=i.campaign_config||{};\n\n// FULL PROMPT 1 - Adapted for both modes\nconst prompt=`YOU ARE AN ELITE SHORT-FORM CONTENT STRATEGIST AND ATTENTION ENGINEER, RECOGNIZED FOR EXTRACTING MAXIMUM-VIRALITY CLIPS FROM VIDEO CONTENT. YOU HAVE DEEP EXPERTISE IN SCROLL-STOPPING PSYCHOLOGY, PLATFORM ALGORITHM MECHANICS, AND HOOK ARCHITECTURE ACROSS TIKTOK, INSTAGRAM REELS, AND YOUTUBE SHORTS.\n\nYOUR SOLE MISSION: Analyze the provided ${isVision?'video analysis and transcript':'transcript'} and identify the timestamp ranges that will generate the highest view counts when clipped and posted as short-form vertical video.\n\n---\n\n### THE 6-SECOND GATE \u2014 THE ENTIRE GAME\n\nData from 14,000 clips across Content Rewards campaigns reveals a single decisive variable:\n\n- Clips where 70%+ of viewers made it past second 6 averaged 120,000 views\n- Clips where under 40% made it past second 6 averaged 1,800 views\n- Same creators. Same campaigns. Same platforms. Only the opening differed.\n\nHOW THE ALGORITHM ACTUALLY WORKS: When you post a clip, the platform shows it to a test batch of 200-500 people and measures one thing \u2014 did they keep watching past 6 seconds? If retention is high, the clip gets pushed to a larger batch, then larger, then larger. Every distribution tier is gated by early retention. The entire game is won or lost before the viewer knows what the video is about.\n\nThis means: an average clip with an incredible first 6 seconds will outperform an incredible clip with an average opening every single time.\n\nTHE THREE ELEMENTS THAT WIN THE 6-SECOND GATE:\n1. PATTERN INTERRUPT \u2014 Something visually unexpected or aurally jarring in the first moment.\n2. OPEN LOOP \u2014 A statement in the first 6 seconds that NEEDS resolution.\n3. SPECIFIC NUMBER OR CREDIBLE DETAIL \u2014 \"14,999 in one week\" locks the brain 10x harder than \"a lot of money.\"\n\n---\n\n### PLATFORM INTELLIGENCE\n\nTIKTOK: Completion rate is the #1 distribution signal. First 0-3 seconds determine whether the algorithm pushes the clip. Pattern interrupts \u2014 mid-sentence entries, bold claims, unexpected starts \u2014 beat polished intros every time.\n\nINSTAGRAM REELS: Saves and shares outweigh likes. Hook must land in the first 1-2 seconds.\n\nYOUTUBE SHORTS: Watch time percentage is the primary rank signal. Curiosity gaps that tease a resolution force viewers to the end.\n\nTRIGGER TYPES THAT STOP THE SCROLL:\n- Controversy, Confession, Revelation, Conflict, Extreme Claim, Mid-Sentence Entry, Stakes Moment, Punchline\n\n---\n\n### INSTRUCTIONS\n\n1. SCAN the ${isVision?'video analysis':'transcript'} for Emotional Spike Moments using the trigger types above.\n\n2. SCORE each flagged moment on Hook Quality (1-10):\n   - Starts mid-action or mid-thought: +2\n   - Creates an unanswered question in the first 5 words: +2\n   - Contains emotional charge: +2\n   - Is niche-specific: +2\n   - Is specific not generic: +2\n   Only clips scoring 6+ proceed to Stage 3.\n\n3. EVALUATE THE 6-SECOND GATE for each passing clip:\n   - PATTERN INTERRUPT: Does the opening moment create disruption?\n   - OPEN LOOP: Does a statement create tension that forces continued watching?\n   - SPECIFIC DETAIL: Is there a number, name, or concrete claim in first 6 seconds?\n\n4. MAP the Retention Arc: [HOOK \u2192 TENSION BUILD \u2192 PAYOFF]\n   Adjust timestamps until all three elements exist within the clip.\n\n5. RANK and OUTPUT top 5-10 clips by hook score.\n\n---\n\n### WHAT NOT TO DO\n\n- NEVER score above 6 if the clip requires prior context\n- NEVER start a clip at a natural pause or sentence beginning \u2014 always mid-thought\n- NEVER output a clip where the payoff falls outside the timestamp range\n- DO NOT include clips under 15 seconds or over 90 seconds\n- NEVER output fewer than 5 clips\n- DO NOT overlap timestamp ranges between clips\n- NEVER ignore the hook_clip_timestamp field\n\n---\n\n### EXPECTED OUTPUT\n\nFORMAT: JSON\n\n${isVision?`\nVISION ANALYSIS (Gemini observed):\n${JSON.stringify(visionClips, null, 2)}\n\nTRANSCRIPT (what was said):\n${transcriptData}\n`:`\nTRANSCRIPT:\n${transcriptData}\n`}\n\nCAMPAIGN CONTEXT:\n- Campaign Name: ${c.campaign_name||'unknown'}\n- Platform: ${c.platform||'vertical_video'}\n- Length: ${c.clip_length_min||30}-${c.clip_length_max||90} seconds\n- Hashtags: ${(c.required_hashtags||[]).join(', ')||'none'}\n- Mentions: ${(c.required_mentions||[]).join(', ')||'none'}\n- Notes: ${c.campaign_notes||'none'}\n- Vision Mode: ${isVision?'ENABLED - using Gemini analysis':'DISABLED - using transcript only'}\n\n---\n\nReturn format:\n{\"rank\":1,\"hook_score\":9,\"timestamp_start\":\"MM:SS\",\"timestamp_end\":\"MM:SS\",\"duration_seconds\":46,\"trigger_type\":\"type\",\"opening_line\":\"text\",\"hook_clip_timestamp\":\"MM:SS\",\"six_second_gate\":{\"pattern_interrupt\":\"Yes/No\",\"open_loop\":\"Yes/No\",\"specific_detail\":\"Yes/No\",\"gate_verdict\":\"PASS/FAIL\"},\"why_it_hits\":\"explanation\",\"retention_arc\":{\"hook\":{\"timestamp\":\"MM:SS\",\"description\":\"text\"},\"tension\":{\"timestamp\":\"MM:SS\",\"description\":\"text\"},\"payoff\":{\"timestamp\":\"MM:SS\",\"description\":\"text\"}},\"platform_fit\":\"platform - reason\",\"risk_flags\":\"none\"};\n\nOutput the clips array.`;\n\nreturn[{json:{...i,prompt_1:prompt}}];\n"
+          },
+          "notes": "Build Prompt 1 - Full Prompt from clip-system-prompts.md adapted for dual mode: Normal (transcript) + Vision (Gemini analysis + transcript). Uses full Prompt 1 system with 6-second gate evaluation."
+        },
+        {
+          "id": "http-007",
+          "name": "7. Claude - Find Clips",
+          "type": "n8n-nodes-base.httpRequest",
+          "typeVersion": 4.4,
+          "position": [
+            1456,
+            304
+          ],
+          "parameters": {
+            "method": "POST",
+            "url": "https://api.anthropic.com/v1/messages",
+            "authentication": "predefinedCredentialType",
+            "nodeCredentialType": "anthropicApi",
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Model Version",
+                  "value": "claude-opus-4-6"
+                }
+              ]
+            },
+            "sendBody": true,
+            "bodyParameters": {
+              "parameters": [
+                {
+                  "name": "model",
+                  "value": "claude-opus-4-6"
+                },
+                {
+                  "name": "max_tokens",
+                  "value": 4096
+                },
+                {
+                  "name": "messages",
+                  "value": "=[{\"role\": \"user\", \"content\": $json.prompt_1}]"
+                }
+              ]
+            },
+            "options": {
+              "timeout": 180000
+            }
+          },
+          "credentials": {
+            "anthropicApi": {
+              "id": "Cxv6lZXWoCzIcpGz",
+              "name": "Anthropic account"
+            }
+          }
+        },
+        {
+          "id": "code-008",
+          "name": "8. Parse Clips",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [
+            1680,
+            304
+          ],
+          "parameters": {
+            "jsCode": "const r=$input.first().json,c=r.content?.[0]?.text||r.text||'';const m=c.match(/\\{[\\s\\S]*\\}/);let clips=[];if(m){try{const d=JSON.parse(m[0]);clips=d.clips||[];}catch{}}return[{json:{...r,clips:clips}}];"
+          }
+        },
+        {
+          "id": "slack-010",
+          "name": "10. Slack - Select Clips",
+          "type": "n8n-nodes-base.slack",
+          "typeVersion": 2.4,
+          "position": [
+            1872,
+            304
+          ],
+          "parameters": {
+            "authentication": "oAuth2",
+            "select": "channel",
+            "channelId": {
+              "__rl": true,
+              "value": "C0AGGJPPV5G",
+              "mode": "list",
+              "cachedResultName": "content-rewards"
+            },
+            "text": "=\ud83c\udfac *Select Clips*\\nClips found: {{$json.clipCount}}",
+            "otherOptions": {}
+          },
+          "credentials": {
+            "slackOAuth2Api": {
+              "id": "990tD5XQ81EHfgVM",
+              "name": "Slack account 2"
+            }
+          },
+          "webhookId": "73ec1e8b-8864-4af6-9709-39b9ce3082f1"
+        },
+        {
+          "id": "code-012",
+          "name": "12. Parse Selection",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [
+            2080,
+            304
+          ],
+          "parameters": {
+            "jsCode": "const s=$input.first().json,c=s.clips||[],sel=s.selected_clips||'1';const nums=sel.split(/[,;\\s]+/).map(n=>parseInt(n.trim())-1).filter(n=>!isNaN(n)&&n>=0&&n<c.length);return[{json:{...s,selectedClips:nums.map(i=>c[i]).filter(Boolean)}}];"
+          }
+        },
+        {
+          "id": "loop-013",
+          "name": "13. Loop Over Clips",
+          "type": "n8n-nodes-base.splitInBatches",
+          "typeVersion": 3,
+          "position": [
+            2288,
+            304
+          ],
+          "parameters": {
+            "options": {}
+          }
+        },
+        {
+          "id": "slack-029",
+          "name": "29. Slack - Final Review",
+          "type": "n8n-nodes-base.slack",
+          "typeVersion": 2.4,
+          "position": [
+            2512,
+            320
+          ],
+          "parameters": {
+            "authentication": "oAuth2",
+            "select": "channel",
+            "channelId": {
+              "__rl": true,
+              "value": "C0AGGJPPV5G",
+              "mode": "list",
+              "cachedResultName": "content-rewards"
+            },
+            "text": "=\ud83c\udfac *Final Review*\\nRender status: {{$json.isComplete}}",
+            "otherOptions": {}
+          },
+          "credentials": {
+            "slackOAuth2Api": {
+              "id": "990tD5XQ81EHfgVM",
+              "name": "Slack account 2"
+            }
+          },
+          "webhookId": "e004ff5b-d7a8-4905-92ab-64b36788921f"
+        },
+        {
+          "id": "code-031",
+          "name": "31. Parse Final Decision",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [
+            2704,
+            320
+          ],
+          "parameters": {
+            "jsCode": "const a=($input.first().json.approval||'').toLowerCase();return[{json:{...$input.first().json,isApproved:a==='approve'||a==='yes'}}];"
+          }
+        },
+        {
+          "id": "airtable-032",
+          "name": "32. Create Airtable Record",
+          "type": "n8n-nodes-base.airtable",
+          "typeVersion": 2.1,
+          "position": [
+            2928,
+            320
+          ],
+          "parameters": {
+            "operation": "create",
+            "base": {
+              "__rl": true,
+              "value": "=apprfl6zJJVMW2FDi",
+              "mode": "id"
+            },
+            "table": {
+              "__rl": true,
+              "value": "tbluyT0gdxmABh8TZ",
+              "mode": "list",
+              "cachedResultName": "CAMPAIGNS",
+              "cachedResultUrl": "https://airtable.com/apprfl6zJJVMW2FDi/tbluyT0gdxmABh8TZ"
+            },
+            "columns": {
+              "mappingMode": "defineBelow",
+              "value": {
+                "Budget": 0,
+                "Rate ($/1000 views)": 0,
+                "Clip Length Min (s)": 0,
+                "Clip Length Max (s)": 0,
+                "Status": "Active"
+              },
+              "matchingColumns": [],
+              "schema": [
+                {
+                  "id": "Client Name",
+                  "displayName": "Client Name",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "string",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Status",
+                  "displayName": "Status",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "options",
+                  "options": [
+                    {
+                      "name": "Active",
+                      "value": "Active"
+                    },
+                    {
+                      "name": "Paused",
+                      "value": "Paused"
+                    },
+                    {
+                      "name": "Completed",
+                      "value": "Completed"
+                    },
+                    {
+                      "name": "Ready",
+                      "value": "Ready"
+                    }
+                  ],
+                  "readOnly": false,
+                  "removed": false
+                },
+                {
+                  "id": "Platform",
+                  "displayName": "Platform",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "options",
+                  "options": [
+                    {
+                      "name": "TikTok",
+                      "value": "TikTok"
+                    },
+                    {
+                      "name": "YouTube Shorts",
+                      "value": "YouTube Shorts"
+                    },
+                    {
+                      "name": "Instagram",
+                      "value": "Instagram"
+                    },
+                    {
+                      "name": "X",
+                      "value": "X"
+                    }
+                  ],
+                  "readOnly": false,
+                  "removed": false
+                },
+                {
+                  "id": "Budget",
+                  "displayName": "Budget",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "number",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Rate ($/1000 views)",
+                  "displayName": "Rate ($/1000 views)",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "number",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Required Hashtags",
+                  "displayName": "Required Hashtags",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "array",
+                  "options": [
+                    {
+                      "name": "Hashtag1",
+                      "value": "Hashtag1"
+                    }
+                  ],
+                  "readOnly": false,
+                  "removed": false
+                },
+                {
+                  "id": "Required Mentions",
+                  "displayName": "Required Mentions",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "array",
+                  "options": [
+                    {
+                      "name": "Mention1",
+                      "value": "Mention1"
+                    }
+                  ],
+                  "readOnly": false,
+                  "removed": false
+                },
+                {
+                  "id": "Caption Style",
+                  "displayName": "Caption Style",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "options",
+                  "options": [
+                    {
+                      "name": "Member POV",
+                      "value": "Member POV"
+                    },
+                    {
+                      "name": "Search-Optimized",
+                      "value": "Search-Optimized"
+                    },
+                    {
+                      "name": "UGC",
+                      "value": "UGC"
+                    }
+                  ],
+                  "readOnly": false,
+                  "removed": false
+                },
+                {
+                  "id": "Clip Length Min (s)",
+                  "displayName": "Clip Length Min (s)",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "number",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Clip Length Max (s)",
+                  "displayName": "Clip Length Max (s)",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "number",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Content Type",
+                  "displayName": "Content Type",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "options",
+                  "options": [
+                    {
+                      "name": "Clipping",
+                      "value": "Clipping"
+                    },
+                    {
+                      "name": "UGC",
+                      "value": "UGC"
+                    }
+                  ],
+                  "readOnly": false,
+                  "removed": false
+                },
+                {
+                  "id": "Social Accounts",
+                  "displayName": "Social Accounts",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "array",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Notes",
+                  "displayName": "Notes",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "string",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Start Date",
+                  "displayName": "Start Date",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "dateTime",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "End Date",
+                  "displayName": "End Date",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "dateTime",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Campaign Summary (AI)",
+                  "displayName": "Campaign Summary (AI)",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "string",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "CLIPS",
+                  "displayName": "CLIPS",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "array",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                }
+              ],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {
+              "view": {
+                "__rl": true,
+                "mode": "list",
+                "value": ""
+              }
+            }
+          },
+          "credentials": {
+            "airtableTokenApi": {
+              "id": "q83hLaqB6n75LmRJ",
+              "name": "Airtable (N8N)"
+            }
+          }
+        },
+        {
+          "id": "slack-033",
+          "name": "33. Slack - Complete",
+          "type": "n8n-nodes-base.slack",
+          "typeVersion": 2.4,
+          "position": [
+            3152,
+            320
+          ],
+          "parameters": {
+            "authentication": "oAuth2",
+            "select": "channel",
+            "channelId": {
+              "__rl": true,
+              "value": "C0AGGJPPV5G",
+              "mode": "list",
+              "cachedResultName": "content-rewards"
+            },
+            "text": "={{$json.isApproved?'\u2705 Approved':'\u274c Rejected'}}",
+            "otherOptions": {}
+          },
+          "credentials": {
+            "slackOAuth2Api": {
+              "id": "990tD5XQ81EHfgVM",
+              "name": "Slack account 2"
+            }
+          },
+          "webhookId": "42de59cf-796a-455e-9a89-c251ff8143f2"
+        },
+        {
+          "id": "set-000",
+          "name": "0. Set API URL",
+          "type": "n8n-nodes-base.set",
+          "typeVersion": 3.4,
+          "position": [
+            -592,
+            288
+          ],
+          "parameters": {
+            "assignments": {
+              "assignments": [
+                {
+                  "id": "apiBaseUrl",
+                  "name": "apiBaseUrl",
+                  "value": "http://159.69.14.7:3000",
+                  "type": "string"
+                }
+              ]
+            },
+            "options": {}
+          }
+        },
+        {
+          "id": "split-out-new",
+          "name": "Split Out Clips",
+          "type": "n8n-nodes-base.splitOut",
+          "typeVersion": 1,
+          "position": [
+            2288,
+            160
+          ],
+          "parameters": {
+            "fieldToSplitOut": "clips",
+            "options": {}
+          }
+        },
+        {
+          "id": "execute-clip-sub",
+          "name": "Execute Clip Sub-Workflow",
+          "type": "n8n-nodes-base.executeWorkflow",
+          "typeVersion": 1,
+          "position": [
+            2512,
+            160
+          ],
+          "parameters": {
+            "workflowId": "UD2mtYrRGArv3m5T",
+            "options": {}
+          }
+        },
+        {
+          "id": "airtable-trigger-new",
+          "name": "Airtable Trigger",
+          "type": "n8n-nodes-base.airtableTrigger",
+          "typeVersion": 1,
+          "position": [
+            -1008,
+            304
+          ],
+          "parameters": {
+            "pollTimes": {
+              "item": [
+                {
+                  "mode": "everyMinute"
+                }
+              ]
+            },
+            "authentication": "airtableTokenApi",
+            "baseId": {
+              "__rl": true,
+              "value": "apprfl6zJJVMW2FDi",
+              "mode": "id",
+              "cachedResultName": "apprfl6zJJVMW2FDi"
+            },
+            "tableId": {
+              "__rl": true,
+              "value": "tbluyT0gdxmABh8TZ",
+              "mode": "id",
+              "cachedResultName": "tbluyT0gdxmABh8TZ"
+            },
+            "triggerField": "Status",
+            "additionalFields": {}
+          },
+          "credentials": {
+            "airtableTokenApi": {
+              "id": "q83hLaqB6n75LmRJ",
+              "name": "Airtable (N8N)"
+            }
+          }
+        },
+        {
+          "id": "if-status-ready",
+          "name": "IF Status = Ready",
+          "type": "n8n-nodes-base.if",
+          "typeVersion": 2.3,
+          "position": [
+            -816,
+            304
+          ],
+          "parameters": {
+            "conditions": {
+              "options": {
+                "caseSensitive": true,
+                "leftValue": "",
+                "typeValidation": "strict",
+                "version": 3
+              },
+              "conditions": [
+                {
+                  "leftValue": "={{ $json.fields.Status }}",
+                  "rightValue": "Ready",
+                  "operator": {
+                    "type": "string",
+                    "operation": "equals",
+                    "name": "filter.operator.equals"
+                  },
+                  "id": "condition-1771897873515-pm8koqnuy"
+                }
+              ],
+              "combinator": "and"
+            },
+            "options": {
+              "ignoreCase": false
+            }
+          }
+        },
+        {
+          "id": "slack-wrong-status",
+          "name": "Slack - Wrong Status",
+          "type": "n8n-nodes-base.slack",
+          "typeVersion": 2.4,
+          "position": [
+            -704,
+            480
+          ],
+          "parameters": {
+            "authentication": "oAuth2",
+            "select": "channel",
+            "channelId": {
+              "__rl": true,
+              "value": "C0AGGJPPV5G",
+              "mode": "list",
+              "cachedResultName": "content-rewards"
+            },
+            "text": "\u26a0\ufe0f Airtable trigger fired but Status is not Ready. Current: {{$json.Status}}",
+            "otherOptions": {}
+          },
+          "credentials": {
+            "slackOAuth2Api": {
+              "id": "990tD5XQ81EHfgVM",
+              "name": "Slack account 2"
+            }
+          },
+          "webhookId": "4b7e3927-4833-41ef-921b-5cb46a8e24fb"
+        },
+        {
+          "id": "code-003b",
+          "name": "3b. Split Source Links",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [
+            48,
+            304
+          ],
+          "parameters": {
+            "jsCode": "const triggerData = $node[\"Airtable Trigger\"].json;\nconst f = triggerData.fields || {};\nconst rawLinks = f['Source Video Links'] || '';\n\nconst links = rawLinks.split(',').map(l => l.trim()).filter(l => l);\n\nconst currentData = $input.first().json;\n\nif (links.length === 0) {\n  return [{ json: { ...currentData, source_url: '', link_index: 0, total_links: 0 } }];\n}\n\nreturn links.map((link, i) => ({\n  json: { ...currentData, source_url: link, link_index: i, total_links: links.length }\n}));"
+          },
+          "notes": "Split comma-separated source links into individual workflow items",
+          "notesInFlow": false,
+          "retryOnFail": false,
+          "alwaysOutputData": false,
+          "executeOnce": false,
+          "onError": "continueRegularOutput"
+        },
+        {
+          "id": "if-004b",
+          "name": "5b. Check Duration (<5min?)",
+          "type": "n8n-nodes-base.if",
+          "typeVersion": 2,
+          "position": [
+            1120,
+            96
+          ],
+          "parameters": {
+            "conditions": {
+              "options": {
+                "caseSensitive": true,
+                "leftValue": "",
+                "typeValidation": "strict",
+                "version": 1
+              },
+              "conditions": [
+                {
+                  "id": "duration-5min",
+                  "leftValue": "={{ $json.content[$json.content.length - 1].offset / 1000 }}",
+                  "operator": "<=",
+                  "rightValue": "300"
+                },
+                {
+                  "id": "b9289d11-d5ee-45e6-b1a3-b2aa70bfdb35",
+                  "leftValue": "= {{ $json.content[$json.content.length - 1].offset / 1000 }}",
+                  "rightValue": 300,
+                  "operator": {
+                    "type": "number",
+                    "operation": "lte"
+                  }
+                }
+              ],
+              "combinator": "and"
+            },
+            "options": {}
+          },
+          "notes": "Check if video <=5 min - if yes, use Vision Mode. Check: max transcript offset <= 300 seconds",
+          "notesInFlow": false,
+          "retryOnFail": false,
+          "executeOnce": false,
+          "onError": "continueRegularOutput"
+        },
+        {
+          "id": "code-vision",
+          "name": "5c. Vision Mode - Analyze Video",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [
+            1344,
+            80
+          ],
+          "parameters": {
+            "jsCode": "const i=$input.first().json;\nconst v=i.source_url;\nconst c=i.campaign_config||{};\n\nconst p=`YOU ARE AN ELITE SHORT-FORM CONTENT STRATEGIST AND ATTENTION ENGINEER, RECOGNIZED FOR EXTRACTING MAXIMUM-VIRALITY CLIPS FROM VIDEO CONTENT. YOU HAVE DEEP EXPERTISE IN SCROLL-STOPPING PSYCHOLOGY, PLATFORM ALGORITHM MECHANICS, AND HOOK ARCHITECTURE ACROSS TIKTOK, INSTAGRAM REELS, AND YOUTUBE SHORTS.\n\nYOUR SOLE MISSION: Watch this video and identify the timestamp ranges that will generate the highest view counts when clipped and posted as short-form vertical video. Analyze BOTH the visual content AND any audio (speech, music, sound effects).\n\n### CONTEXT ###\n\nPLATFORM INTELLIGENCE:\n\nTIKTOK: Completion rate is the #1 distribution signal. First 0-3 seconds determine whether the algorithm pushes the clip. Pattern interrupts - mid-action entries, bold claims, unexpected starts - beat polished intros every time.\n\nINSTAGRAM REELS: Saves and shares outweigh likes. Hook must land in the first 1-2 seconds. Content people send to friends outperforms content people double-tap.\n\nYOUTUBE SHORTS: Watch time percentage is the primary rank signal. Curiosity gaps that tease a resolution force viewers to the end.\n\n### VIDEO ANALYSIS - WHAT TO LOOK FOR ###\n\nVISUAL HOOKS:\n- Sudden movement or action that stops the scroll\n- Expressive facial reactions\n- Text overlays or graphics that create curiosity\n- Unusual or surprising visuals\n- Pattern interrupts (unexpected camera angle, cut, visual change)\n\nAUDIO HOOKS:\n- Sudden volume change (music drop, louder speech)\n- Emotional tone shifts in voice\n- Music that creates tension or excitement\n- Silence/pause that creates anticipation\n- Key phrases or statements\n\nTRIGGER TYPES THAT STOP THE SCROLL:\n- Controversy: a claim that contradicts common belief\n- Confession: \"I was wrong\", \"nobody told me this\"\n- Revelation: information the viewer didn't know but now can't unknow\n- Conflict: tension between two ideas, people, or outcomes\n- Extreme Claim: a number, result, or statement that sounds impossible\n- Mid-Sentence Entry: drops viewer into the middle of a thought\n- Stakes Moment: something important is on the line\n- Punchline: a payoff that lands hard after a setup\n\n### INSTRUCTIONS ###\n\nExecute these 4 stages fully before producing output:\n\n1. WATCH the full video for Emotional Spike Moments using the trigger types above.\n\n2. SCORE each flagged moment on Hook Quality (1-10):\n   - Visual impact (starts with striking visual): +2\n   - Audio impact (strong audio hook): +2\n   - Creates an unanswered question in first 3 seconds: +2\n   - Emotional charge: +2\n   - Niche-specific content: +2\n   Only clips scoring 6+ proceed to Stage 3.\n\n3. MAP the Retention Arc: [HOOK -> TENSION BUILD -> PAYOFF]\n   Adjust timestamps until all three elements exist within the clip.\n   Discard clips that cannot form a complete arc.\n\n4. RANK and OUTPUT top 5-10 clips by hook score.\n\n### MUSIC/AUDIO ANALYSIS ###\n\nFor each clip, note:\n- Does the original video have background music? (Yes/No)\n- Is the music important to the clip's impact? (Yes/No - explain)\n- Should music be preserved or can it be replaced? (Preserve/Replace)\n\n### CHAIN OF THOUGHT ###\n\nFor each candidate clip:\n1. UNDERSTAND - What is actually happening in this moment?\n2. BASICS - What single emotion does it trigger in a first-time viewer?\n3. BREAK DOWN - Does this moment have a visual hook? Audio hook? Tension? Payoff?\n4. ANALYZE - Apply the +2 scoring system.\n5. BUILD - Finalize timestamps. Adjust for strongest hook and cleanest payoff.\n6. EDGE CASES - Does this clip make sense without the full context?\n7. FINAL ANSWER - Assign score. Include or discard. Rank it.\n\n### WHAT NOT TO DO ###\n\n- NEVER score above 6 if the clip requires prior context to be understood\n- NEVER start a clip at a natural pause or sentence beginning\n- NEVER output a clip where the payoff falls outside the timestamp range\n- DO NOT include clips under 15 seconds or over 90 seconds\n- NEVER output fewer than 5 clips unless the video genuinely has fewer moments\n- DO NOT overlap timestamp ranges between clips\n\n### EXPECTED OUTPUT ###\n\nFORMAT: JSON only. Output this exact schema:\n\n{\"campaign\":\"[Campaign Name]\",\"video_analyzed\":true,\"total_clips_identified\":0,\"clips\":[{\"rank\":1,\"hook_score\":9,\"timestamp_start\":\"MM:SS\",\"timestamp_end\":\"MM:SS\",\"duration_seconds\":46,\"trigger_type\":\"Visual + Audio Hook\",\"description\":\"What happens in this clip\",\"why_it_hits\":\"1-2 sentence psychological explanation\",\"audio_analysis\":{\"has_original_music\":true,\"music_important\":false,\"recommendation\":\"Preserve/Replace\"},\"retention_arc\":{\"hook\":{\"timestamp\":\"MM:SS\",\"description\":\"What the hook is\"},\"tension\":{\"timestamp\":\"MM:SS\",\"description\":\"What builds tension\"},\"payoff\":{\"timestamp\":\"MM:SS\",\"description\":\"What the payoff is\"}},\"platform_fit\":\"TikTok primary - reason why\",\"risk_flags\":\"None\"}]}\n\nCAMPAIGN CONTEXT:\n- Campaign Name: ${c.campaign_name||'unknown'}\n- Platform Target: ${c.platform||'tiktok'}\n- Clip Length Target: ${c.clip_length_min||30}-${c.clip_length_max||90} seconds\n- Required Hashtags: ${(c.required_hashtags||[]).join(', ')||'none'}\n- Required Mentions: ${(c.required_mentions||[]).join(', ')||'none'}`;\n\nreturn[{json:{...i,prompt_4:p,video_url:v}}];\n"
+          },
+          "notes": "Build detailed prompt for Gemini vision analysis",
+          "notesInFlow": false,
+          "retryOnFail": false,
+          "executeOnce": false,
+          "onError": "continueRegularOutput"
+        },
+        {
+          "id": "http-gemini",
+          "name": "5d. Gemini Vision - Call API",
+          "type": "n8n-nodes-base.httpRequest",
+          "typeVersion": 4.4,
+          "position": [
+            1568,
+            80
+          ],
+          "parameters": {
+            "method": "POST",
+            "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyAvClnb6UPA5N7CrDQ_IntYZR9bNFlu0ns",
+            "sendBody": true,
+            "specifyBody": "json",
+            "jsonBody": "={\n  \"contents\": [\n    {\n      \"parts\": [\n        {\n          \"fileData\": {\n            \"mimeType\": \"video/mp4\",\n            \"fileUri\": \"{{ $json.source_url }}\"\n          }\n        },\n        {\n          \"text\": \"You are analyzing a video to identify viral clip moments. Identify 3-5 moments (15-60 seconds) that work well as short-form social media clips. For each moment provide: 1. Timestamp (start-end in MM:SS), 2. Description, 3. Why it's engaging. Return as JSON array.\"\n        }\n      ]\n    }\n  ]\n}",
+            "options": {
+              "timeout": 120000
+            }
+          },
+          "notes": "Call Gemini API to analyze video for viral moments",
+          "notesInFlow": false,
+          "retryOnFail": false,
+          "executeOnce": false,
+          "onError": "continueRegularOutput"
+        },
+        {
+          "id": "code-5e",
+          "name": "5e. Parse Vision Response",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [
+            1792,
+            80
+          ],
+          "parameters": {
+            "jsCode": "const i=$input.first().json;\nconst r=i.response||{};\nconst candidates=r.candidates||[];\nconst content=candidates[0]?.content||{};\nconst parts=content.parts||[];\nconst text=parts.map(p=>p.text||'').join('');\n\n// Try to parse JSON from Gemini response\nlet clips=[];\ntry{\n  const jsonMatch=text.match(/\\[[\\s\\S]*\\]/);\n  if(jsonMatch){\n    clips=JSON.parse(jsonMatch[0]);\n  }\n}catch(e){\n  // If JSON parse fails, create structured data from text\n  clips=[{\n    rank:1,\n    hook_score:8,\n    description:text.substring(0,200),\n    why_it_hits:'Vision analysis from Gemini'\n  }];\n}\n\nreturn[{json:{...i,vision_clips:clips,vision_mode:true,transcript:text}}];"
+          },
+          "notes": "Parse Gemini vision API response into clip format for Build Prompt 1",
+          "notesInFlow": false,
+          "retryOnFail": false,
+          "executeOnce": false,
+          "onError": "continueRegularOutput"
+        },
+        {
+          "id": "error-trigger-main",
+          "name": "On Workflow Error",
+          "type": "n8n-nodes-base.errorTrigger",
+          "typeVersion": 1,
+          "position": [
+            -912,
+            672
+          ],
+          "parameters": {},
+          "notes": "Fires on any node failure in the workflow",
+          "notesInFlow": true
+        },
+        {
+          "id": "slack-alert-main",
+          "name": "Alert on Error",
+          "type": "n8n-nodes-base.slack",
+          "typeVersion": 2.4,
+          "position": [
+            -688,
+            672
+          ],
+          "parameters": {
+            "authentication": "oAuth2",
+            "select": "channel",
+            "channelId": {
+              "__rl": true,
+              "value": "C0AGGJPPV5G",
+              "mode": "list",
+              "cachedResultName": "content-rewards"
+            },
+            "text": "=\ud83d\udea8 *Content Rewards Workflow Error*\n\n*Workflow:* {{ $json.workflow.name }}\n*Failed at:* {{ $json.execution.lastNodeExecuted }}\n*Error:* {{ $json.execution.error.message }}\n*Execution ID:* `{{ $json.execution.id }}`\n\n_View in N8N: <{{ $json.execution.url }}|Execution Log>_",
+            "otherOptions": {}
+          },
+          "credentials": {
+            "slackOAuth2Api": {
+              "id": "990tD5XQ81EHfgVM",
+              "name": "Slack account 2"
+            }
+          },
+          "notes": "Sends error notification to Slack",
+          "notesInFlow": true,
+          "webhookId": "1d2b2f8e-0acb-4789-9e76-448f4d582f39"
+        },
+        {
+          "id": "code-resume-check",
+          "name": "3c. Check Resume Index",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [
+            -320,
+            304
+          ],
+          "parameters": {
+            "jsCode": "const fields = $input.first().json.fields || {};\nconst resumeIndex = fields['Last Processed Clip Index'] || 0;\n\nreturn [{\n  json: {\n    ...$input.first().json,\n    resumeIndex: resumeIndex,\n    isResume: resumeIndex > 0\n  }\n}];"
+          },
+          "notes": "Extract resume index from Airtable to skip already-processed clips",
+          "notesInFlow": true
+        },
+        {
+          "id": "airtable-update-progress",
+          "name": "33b. Update Progress Index",
+          "type": "n8n-nodes-base.airtable",
+          "typeVersion": 2.1,
+          "position": [
+            3360,
+            320
+          ],
+          "parameters": {
+            "operation": "update",
+            "base": {
+              "__rl": true,
+              "mode": "id",
+              "value": "apprfl6zJJVMW2FDi",
+              "cachedResultName": "apprfl6zJJVMW2FDi"
+            },
+            "table": {
+              "__rl": true,
+              "mode": "id",
+              "value": "tbluyT0gdxmABh8TZ",
+              "cachedResultName": "tbluyT0gdxmABh8TZ"
+            },
+            "columns": {
+              "mappingMode": "defineBelow",
+              "value": {
+                "Total Clips Identified": 0,
+                "Clip Length Max (s)": 0,
+                "Clip Length Min (s)": 0,
+                "Rate ($/1000 views)": 0,
+                "Budget": 0,
+                "Last Processed Clip Index": "={{ $json.index }}"
+              },
+              "matchingColumns": [
+                "id"
+              ],
+              "schema": [
+                {
+                  "id": "id",
+                  "displayName": "id",
+                  "required": false,
+                  "defaultMatch": true,
+                  "display": true,
+                  "type": "string",
+                  "readOnly": true,
+                  "removed": false,
+                  "canBeUsedToMatch": true,
+                  "options": []
+                },
+                {
+                  "id": "Client Name",
+                  "displayName": "Client Name",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "string",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Status",
+                  "displayName": "Status",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "options",
+                  "options": [
+                    {
+                      "name": "Active",
+                      "value": "Active"
+                    },
+                    {
+                      "name": "Paused",
+                      "value": "Paused"
+                    },
+                    {
+                      "name": "Completed",
+                      "value": "Completed"
+                    },
+                    {
+                      "name": "Ready",
+                      "value": "Ready"
+                    },
+                    {
+                      "name": "Processing",
+                      "value": "Processing"
+                    }
+                  ],
+                  "readOnly": false,
+                  "removed": false
+                },
+                {
+                  "id": "Platform",
+                  "displayName": "Platform",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "array",
+                  "options": [
+                    {
+                      "name": "TikTok",
+                      "value": "TikTok"
+                    },
+                    {
+                      "name": "YouTube Shorts",
+                      "value": "YouTube Shorts"
+                    },
+                    {
+                      "name": "Instagram",
+                      "value": "Instagram"
+                    },
+                    {
+                      "name": "X",
+                      "value": "X"
+                    }
+                  ],
+                  "readOnly": false,
+                  "removed": false
+                },
+                {
+                  "id": "Budget",
+                  "displayName": "Budget",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "number",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Source Video Links",
+                  "displayName": "Source Video Links",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "string",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Rate ($/1000 views)",
+                  "displayName": "Rate ($/1000 views)",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "number",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Required Hashtags",
+                  "displayName": "Required Hashtags",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "array",
+                  "options": [
+                    {
+                      "name": "Hashtag1",
+                      "value": "Hashtag1"
+                    },
+                    {
+                      "name": "#Ad #Advertisement #Sponsored",
+                      "value": "#Ad #Advertisement #Sponsored"
+                    },
+                    {
+                      "name": "#Ad",
+                      "value": "#Ad"
+                    },
+                    {
+                      "name": "#Sponsored",
+                      "value": "#Sponsored"
+                    },
+                    {
+                      "name": "#Advertisement ",
+                      "value": "#Advertisement "
+                    }
+                  ],
+                  "readOnly": false,
+                  "removed": false
+                },
+                {
+                  "id": "Required Mentions",
+                  "displayName": "Required Mentions",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "array",
+                  "options": [
+                    {
+                      "name": "Mention1",
+                      "value": "Mention1"
+                    },
+                    {
+                      "name": "@callofduty",
+                      "value": "@callofduty"
+                    }
+                  ],
+                  "readOnly": false,
+                  "removed": false
+                },
+                {
+                  "id": "Caption Style",
+                  "displayName": "Caption Style",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "options",
+                  "options": [
+                    {
+                      "name": "Member POV",
+                      "value": "Member POV"
+                    },
+                    {
+                      "name": "Search-Optimized",
+                      "value": "Search-Optimized"
+                    },
+                    {
+                      "name": "UGC",
+                      "value": "UGC"
+                    }
+                  ],
+                  "readOnly": false,
+                  "removed": false
+                },
+                {
+                  "id": "Clip Length Min (s)",
+                  "displayName": "Clip Length Min (s)",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "number",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Clip Length Max (s)",
+                  "displayName": "Clip Length Max (s)",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "number",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Content Type",
+                  "displayName": "Content Type",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "options",
+                  "options": [
+                    {
+                      "name": "Clipping",
+                      "value": "Clipping"
+                    },
+                    {
+                      "name": "UGC",
+                      "value": "UGC"
+                    }
+                  ],
+                  "readOnly": false,
+                  "removed": false
+                },
+                {
+                  "id": "Social Accounts",
+                  "displayName": "Social Accounts",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "array",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Notes",
+                  "displayName": "Notes",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "string",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Last Processed Clip Index",
+                  "displayName": "Last Processed Clip Index",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "number",
+                  "readOnly": false,
+                  "options": []
+                },
+                {
+                  "id": "Total Clips Identified",
+                  "displayName": "Total Clips Identified",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "number",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Start Date",
+                  "displayName": "Start Date",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "dateTime",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "End Date",
+                  "displayName": "End Date",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "dateTime",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Campaign Summary (AI)",
+                  "displayName": "Campaign Summary (AI)",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "string",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "CLIPS",
+                  "displayName": "CLIPS",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "array",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                }
+              ],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {
+              "view": {
+                "__rl": true,
+                "mode": "list",
+                "value": ""
+              }
+            }
+          },
+          "credentials": {
+            "airtableTokenApi": {
+              "id": "q83hLaqB6n75LmRJ",
+              "name": "Airtable (N8N)"
+            }
+          },
+          "notes": "Save current clip index to Airtable for resume capability",
+          "notesInFlow": true
+        },
+        {
+          "id": "airtable-update-total",
+          "name": "12b. Update Total Clips",
+          "type": "n8n-nodes-base.airtable",
+          "typeVersion": 2.1,
+          "position": [
+            2288,
+            448
+          ],
+          "parameters": {
+            "operation": "update",
+            "base": {
+              "__rl": true,
+              "mode": "id",
+              "value": "apprfl6zJJVMW2FDi",
+              "cachedResultName": "apprfl6zJJVMW2FDi"
+            },
+            "table": {
+              "__rl": true,
+              "mode": "id",
+              "value": "tbluyT0gdxmABh8TZ",
+              "cachedResultName": "tbluyT0gdxmABh8TZ"
+            },
+            "columns": {
+              "mappingMode": "defineBelow",
+              "value": {
+                "Last Processed Clip Index": 0,
+                "Clip Length Max (s)": 0,
+                "Clip Length Min (s)": 0,
+                "Rate ($/1000 views)": 0,
+                "Budget": 0,
+                "Total Clips Identified": "={{ $json.clips.length }}"
+              },
+              "matchingColumns": [
+                "id"
+              ],
+              "schema": [
+                {
+                  "id": "id",
+                  "displayName": "id",
+                  "required": false,
+                  "defaultMatch": true,
+                  "display": true,
+                  "type": "string",
+                  "readOnly": true,
+                  "removed": false,
+                  "canBeUsedToMatch": true,
+                  "options": []
+                },
+                {
+                  "id": "Client Name",
+                  "displayName": "Client Name",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "string",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Status",
+                  "displayName": "Status",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "options",
+                  "options": [
+                    {
+                      "name": "Active",
+                      "value": "Active"
+                    },
+                    {
+                      "name": "Paused",
+                      "value": "Paused"
+                    },
+                    {
+                      "name": "Completed",
+                      "value": "Completed"
+                    },
+                    {
+                      "name": "Ready",
+                      "value": "Ready"
+                    },
+                    {
+                      "name": "Processing",
+                      "value": "Processing"
+                    }
+                  ],
+                  "readOnly": false,
+                  "removed": false
+                },
+                {
+                  "id": "Platform",
+                  "displayName": "Platform",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "array",
+                  "options": [
+                    {
+                      "name": "TikTok",
+                      "value": "TikTok"
+                    },
+                    {
+                      "name": "YouTube Shorts",
+                      "value": "YouTube Shorts"
+                    },
+                    {
+                      "name": "Instagram",
+                      "value": "Instagram"
+                    },
+                    {
+                      "name": "X",
+                      "value": "X"
+                    }
+                  ],
+                  "readOnly": false,
+                  "removed": false
+                },
+                {
+                  "id": "Budget",
+                  "displayName": "Budget",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "number",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Source Video Links",
+                  "displayName": "Source Video Links",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "string",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Rate ($/1000 views)",
+                  "displayName": "Rate ($/1000 views)",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "number",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Required Hashtags",
+                  "displayName": "Required Hashtags",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "array",
+                  "options": [
+                    {
+                      "name": "Hashtag1",
+                      "value": "Hashtag1"
+                    },
+                    {
+                      "name": "#Ad #Advertisement #Sponsored",
+                      "value": "#Ad #Advertisement #Sponsored"
+                    },
+                    {
+                      "name": "#Ad",
+                      "value": "#Ad"
+                    },
+                    {
+                      "name": "#Sponsored",
+                      "value": "#Sponsored"
+                    },
+                    {
+                      "name": "#Advertisement ",
+                      "value": "#Advertisement "
+                    }
+                  ],
+                  "readOnly": false,
+                  "removed": false
+                },
+                {
+                  "id": "Required Mentions",
+                  "displayName": "Required Mentions",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "array",
+                  "options": [
+                    {
+                      "name": "Mention1",
+                      "value": "Mention1"
+                    },
+                    {
+                      "name": "@callofduty",
+                      "value": "@callofduty"
+                    }
+                  ],
+                  "readOnly": false,
+                  "removed": false
+                },
+                {
+                  "id": "Caption Style",
+                  "displayName": "Caption Style",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "options",
+                  "options": [
+                    {
+                      "name": "Member POV",
+                      "value": "Member POV"
+                    },
+                    {
+                      "name": "Search-Optimized",
+                      "value": "Search-Optimized"
+                    },
+                    {
+                      "name": "UGC",
+                      "value": "UGC"
+                    }
+                  ],
+                  "readOnly": false,
+                  "removed": false
+                },
+                {
+                  "id": "Clip Length Min (s)",
+                  "displayName": "Clip Length Min (s)",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "number",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Clip Length Max (s)",
+                  "displayName": "Clip Length Max (s)",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "number",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Content Type",
+                  "displayName": "Content Type",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "options",
+                  "options": [
+                    {
+                      "name": "Clipping",
+                      "value": "Clipping"
+                    },
+                    {
+                      "name": "UGC",
+                      "value": "UGC"
+                    }
+                  ],
+                  "readOnly": false,
+                  "removed": false
+                },
+                {
+                  "id": "Social Accounts",
+                  "displayName": "Social Accounts",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "array",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Notes",
+                  "displayName": "Notes",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "string",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Last Processed Clip Index",
+                  "displayName": "Last Processed Clip Index",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "number",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Total Clips Identified",
+                  "displayName": "Total Clips Identified",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "number",
+                  "readOnly": false,
+                  "options": []
+                },
+                {
+                  "id": "Start Date",
+                  "displayName": "Start Date",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "dateTime",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "End Date",
+                  "displayName": "End Date",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "dateTime",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "Campaign Summary (AI)",
+                  "displayName": "Campaign Summary (AI)",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "string",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                },
+                {
+                  "id": "CLIPS",
+                  "displayName": "CLIPS",
+                  "required": false,
+                  "defaultMatch": false,
+                  "canBeUsedToMatch": true,
+                  "display": true,
+                  "type": "array",
+                  "readOnly": false,
+                  "removed": false,
+                  "options": []
+                }
+              ],
+              "attemptToConvertTypes": false,
+              "convertFieldsToString": false
+            },
+            "options": {
+              "view": {
+                "__rl": true,
+                "mode": "list",
+                "value": ""
+              }
+            }
+          },
+          "credentials": {
+            "airtableTokenApi": {
+              "id": "q83hLaqB6n75LmRJ",
+              "name": "Airtable (N8N)"
+            }
+          },
+          "notes": "Save total clips count to Airtable for resume tracking",
+          "notesInFlow": true
+        },
+        {
+          "id": "647770b2-15e5-47b3-bf54-bed65266de52",
+          "name": "3d. Hashtag & Mention Cycling",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [
+            240,
+            304
+          ],
+          "parameters": {
+            "jsCode": "const triggerData = $node[\"Airtable Trigger\"].json;\nconst f = triggerData.fields || {};\n\nconst hashtags = f['Required Hashtags'] || [];\nconst mentions = f['Required Mentions'] || [];\n\nconst currentData = $input.first().json;\nconst idx = currentData.link_index || 0;\n\nconst hashtagIdx = hashtags.length > 0 ? idx % hashtags.length : 0;\nconst mentionIdx = mentions.length > 0 ? idx % mentions.length : 0;\n\nreturn [{\n  json: {\n    ...currentData,\n    current_hashtag: hashtags[hashtagIdx] || '',\n    current_mention: mentions[mentionIdx] || '',\n    hashtag_index: hashtagIdx,\n    mention_index: mentionIdx\n  }\n}];"
+          }
+        },
+        {
+          "id": "08454adb-158b-4054-93a1-f1e1723f72c9",
+          "name": "HTTP Request",
+          "type": "n8n-nodes-base.httpRequest",
+          "typeVersion": 4.4,
+          "position": [
+            688,
+            304
+          ],
+          "parameters": {
+            "url": "https://api.supadata.ai/v1/transcript"
+          },
+          "credentials": {
+            "supadataApi": {
+              "id": "JDX9wtWcopK7mBYf",
+              "name": "Supadata account"
+            }
+          }
+        },
+        {
+          "id": "40976d71-4c37-43ba-b4b9-370070c28334",
+          "name": "3f. Drive Link Detector",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [
+            432,
+            304
+          ],
+          "parameters": {
+            "jsCode": "const r = $input.first().json;\nlet url = r.source_url || '';\nlet sourceType = 'unknown';\nlet requiresUpload = false;\n\nif (url.includes('drive.google.com')) {\n  sourceType = 'google_drive';\n  requiresUpload = true;\n} else if (url.includes('youtube.com') || url.includes('youtu.be')) {\n  sourceType = 'youtube';\n} else if (url.includes('tiktok.com')) {\n  sourceType = 'tiktok';\n} else if (url.includes('instagram.com')) {\n  sourceType = 'instagram';\n} else if (url.includes('.mp4') || url.includes('.webm') || url.includes('.s3.')) {\n  sourceType = 'direct_file';\n}\n\nreturn [{\n  json: {\n    ...r,\n    source_type: sourceType,\n    requires_upload: requiresUpload,\n    note: requiresUpload ? 'Google Drive requires download + S3 upload before Supadata' : ''\n  }\n}];"
+          }
+        },
+        {
+          "id": "if-drive-check",
+          "name": "IF - Google Drive?",
+          "type": "n8n-nodes-base.if",
+          "typeVersion": 2.3,
+          "position": [
+            32,
+            144
+          ],
+          "parameters": {
+            "conditions": {
+              "options": {
+                "caseSensitive": true,
+                "leftValue": "",
+                "typeValidation": "strict",
+                "version": 3
+              },
+              "conditions": [
+                {
+                  "id": "uuid",
+                  "leftValue": "={{ $json.source_type }}",
+                  "operator": {
+                    "name": "filter.operator.equals",
+                    "operation": "equals",
+                    "type": "string"
+                  },
+                  "rightValue": "google_drive"
+                }
+              ],
+              "combinator": "and"
+            },
+            "options": {}
+          }
+        },
+        {
+          "id": "76bfc3bc-b3b0-4f0f-a6ec-9e42641b106e",
+          "name": "Google Drive",
+          "type": "n8n-nodes-base.googleDrive",
+          "typeVersion": 1,
+          "position": [
+            960,
+            1360
+          ],
+          "parameters": {
+            "authentication": "oAuth2",
+            "operation": "list",
+            "useQueryString": true,
+            "queryString": "='{{ $json[\"Folder ID\"] }}' in parents",
+            "limit": 100,
+            "options": {
+              "spaces": [
+                "*"
+              ],
+              "corpora": "allDrives"
+            }
+          },
+          "credentials": {
+            "googleDriveOAuth2Api": {
+              "id": "LZkdCleCACJgsylq",
+              "name": "Google Drive account"
+            }
+          }
+        },
+        {
+          "id": "6f388f51-cded-462b-8d02-95430214647d",
+          "name": "Loop Over Items",
+          "type": "n8n-nodes-base.splitInBatches",
+          "typeVersion": 3,
+          "position": [
+            1168,
+            1424
+          ],
+          "parameters": {
+            "batchSize": 50,
+            "options": {}
+          }
+        },
+        {
+          "id": "35bd3883-1acf-4417-809f-08b6418226d6",
+          "name": "Merge",
+          "type": "n8n-nodes-base.merge",
+          "typeVersion": 2.1,
+          "position": [
+            1408,
+            1280
+          ],
+          "parameters": {
+            "mode": "combine",
+            "combinationMode": "multiplex",
+            "options": {}
+          }
+        },
+        {
+          "id": "3050d839-7a3a-408d-9190-1ed21ebd0a0f",
+          "name": "Set Folder ID",
+          "type": "n8n-nodes-base.set",
+          "typeVersion": 3.2,
+          "position": [
+            800,
+            1360
+          ],
+          "parameters": {
+            "fields": {
+              "values": [
+                {
+                  "name": "Folder ID",
+                  "stringValue": "Enter Your Folder ID here"
+                }
+              ]
+            },
+            "options": {}
+          },
+          "notes": "Enter desired Folder",
+          "notesInFlow": true
+        },
+        {
+          "id": "b911aa88-ba14-4668-ac95-c0901e0bddce",
+          "name": "Generate Download Links",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [
+            1168,
+            1232
+          ],
+          "parameters": {
+            "jsCode": "// This function will create an array of file links from the given Google Drive folder\nreturn items.map(file => {\n  return { json: { 'link': `https://drive.google.com/u/3/uc?id=${file.json.id}&export=download&confirm=t&authuser=0`, 'name': file.json.name } };\n});"
+          }
+        },
+        {
+          "id": "fab6958e-b01a-4c01-baa4-0815e0251f01",
+          "name": "Change Status",
+          "type": "n8n-nodes-base.googleDrive",
+          "typeVersion": 1,
+          "position": [
+            1344,
+            1440
+          ],
+          "parameters": {
+            "authentication": "oAuth2",
+            "operation": "share",
+            "fileId": {
+              "__rl": true,
+              "mode": "id",
+              "value": "={{ $json.id }}"
+            },
+            "permissionsUi": {
+              "permissionsValues": {
+                "role": "reader",
+                "type": "anyone"
+              }
+            },
+            "options": {
+              "supportsAllDrives": true
+            }
+          },
+          "credentials": {
+            "googleDriveOAuth2Api": {
+              "id": "LZkdCleCACJgsylq",
+              "name": "Google Drive account"
+            }
+          },
+          "notes": "Make Files Public to anyone with a link",
+          "notesInFlow": true
+        },
+        {
+          "id": "9ac13670-0933-4dd9-af3a-173bd1bde987",
+          "name": "Replace Me",
+          "type": "n8n-nodes-base.noOp",
+          "typeVersion": 1,
+          "position": [
+            1568,
+            1280
+          ],
+          "parameters": {}
+        },
+        {
+          "id": "3c187995-7f64-4815-b0f6-12df80509b05",
+          "name": "Sticky Note",
+          "type": "n8n-nodes-base.stickyNote",
+          "typeVersion": 1,
+          "position": [
+            560,
+            1072
+          ],
+          "parameters": {
+            "content": "## Example Output:\n```JSON\n{\n\"link\": \"https://drive.google.com/u/3/uc?id=1hojqPfXchNTY8YRTNkxSo-8txK9re-V4&export=download&confirm=t&authuser=0\",\n\"name\": \"firefox_rNjA0ybKu7.png\",\n\"kind\": \"drive#permission\",\n\"id\": \"anyoneWithLink\",\n\"type\": \"anyone\",\n\"role\": \"reader\",\n\"allowFileDiscovery\": false\n}\n```\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n### You can store the output data with any data store node you want\n### for example save them into Excel Sheet or Airtable etc...",
+            "height": 626,
+            "width": 1235
+          }
+        }
+      ],
+      "connections": {
+        "3. Parse Campaign Config": {
+          "main": [
+            [
+              {
+                "node": "3b. Split Source Links",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "5. Parse Transcript": {
+          "main": [
+            [
+              {
+                "node": "5b. Check Duration (<5min?)",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "6. Build Prompt 1": {
+          "main": [
+            [
+              {
+                "node": "7. Claude - Find Clips",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "7. Claude - Find Clips": {
+          "main": [
+            [
+              {
+                "node": "8. Parse Clips",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "8. Parse Clips": {
+          "main": [
+            [
+              {
+                "node": "10. Slack - Select Clips",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "10. Slack - Select Clips": {
+          "main": [
+            [
+              {
+                "node": "12. Parse Selection",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "12. Parse Selection": {
+          "main": [
+            [
+              {
+                "node": "12b. Update Total Clips",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "13. Loop Over Clips": {
+          "main": [
+            [
+              {
+                "node": "Split Out Clips",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "29. Slack - Final Review",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "29. Slack - Final Review": {
+          "main": [
+            [
+              {
+                "node": "31. Parse Final Decision",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "31. Parse Final Decision": {
+          "main": [
+            [
+              {
+                "node": "32. Create Airtable Record",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "32. Create Airtable Record": {
+          "main": [
+            [
+              {
+                "node": "33. Slack - Complete",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "33. Slack - Complete": {
+          "main": [
+            [
+              {
+                "node": "13. Loop Over Clips",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "33b. Update Progress Index",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "0. Set API URL": {
+          "main": [
+            [
+              {
+                "node": "3c. Check Resume Index",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Split Out Clips": {
+          "main": [
+            [
+              {
+                "node": "Execute Clip Sub-Workflow",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Execute Clip Sub-Workflow": {
+          "main": [
+            [
+              {
+                "node": "32. Create Airtable Record",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Airtable Trigger": {
+          "main": [
+            [
+              {
+                "node": "IF Status = Ready",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "IF Status = Ready": {
+          "main": [
+            [
+              {
+                "node": "0. Set API URL",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Slack - Wrong Status",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "3b. Split Source Links": {
+          "main": [
+            [
+              {
+                "node": "3d. Hashtag & Mention Cycling",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "5b. Check Duration (<5min?)": {
+          "main": [
+            [
+              {
+                "node": "5c. Vision Mode - Analyze Video",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "6. Build Prompt 1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "5c. Vision Mode - Analyze Video": {
+          "main": [
+            [
+              {
+                "node": "5d. Gemini Vision - Call API",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "5d. Gemini Vision - Call API": {
+          "main": [
+            [
+              {
+                "node": "5e. Parse Vision Response",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "5e. Parse Vision Response": {
+          "main": [
+            [
+              {
+                "node": "6. Build Prompt 1",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "On Workflow Error": {
+          "main": [
+            [
+              {
+                "node": "Alert on Error",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "33b. Update Progress Index": {
+          "main": [
+            [
+              {
+                "node": "13. Loop Over Clips",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "12b. Update Total Clips": {
+          "main": [
+            [
+              {
+                "node": "13. Loop Over Clips",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "3d. Hashtag & Mention Cycling": {
+          "main": [
+            [
+              {
+                "node": "3f. Drive Link Detector",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "3c. Check Resume Index": {
+          "main": [
+            [
+              {
+                "node": "3. Parse Campaign Config",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "3f. Drive Link Detector": {
+          "main": [
+            [
+              {
+                "node": "HTTP Request",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "IF - Google Drive?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "IF - Google Drive?": {
+          "main": [
+            [
+              {
+                "node": "HTTP Request",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "HTTP Request",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Merge": {
+          "main": [
+            [
+              {
+                "node": "Replace Me",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Google Drive": {
+          "main": [
+            [
+              {
+                "node": "Loop Over Items",
+                "type": "main",
+                "index": 0
+              },
+              {
+                "node": "Generate Download Links",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Change Status": {
+          "main": [
+            [
+              {
+                "node": "Loop Over Items",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Set Folder ID": {
+          "main": [
+            [
+              {
+                "node": "Google Drive",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Loop Over Items": {
+          "main": [
+            [
+              {
+                "node": "Merge",
+                "type": "main",
+                "index": 1
+              }
+            ],
+            [
+              {
+                "node": "Change Status",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Generate Download Links": {
+          "main": [
+            [
+              {
+                "node": "Merge",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      },
+      "authors": "Adam Drapkin",
+      "name": null,
+      "description": null,
+      "autosaved": false,
+      "workflowPublishHistory": [
+        {
+          "createdAt": "2026-02-26T01:35:39.252Z",
+          "id": 226,
+          "workflowId": "qGdcGbOnLikzE3Jl",
+          "versionId": "fd147a9c-fdfb-4f59-8b52-d0cb94f3ad1e",
+          "event": "deactivated",
+          "userId": "4e8cb80e-ac4b-46c2-aac1-8e028b4c0817"
+        },
+        {
+          "createdAt": "2026-02-26T01:35:39.367Z",
+          "id": 227,
+          "workflowId": "qGdcGbOnLikzE3Jl",
+          "versionId": "fd147a9c-fdfb-4f59-8b52-d0cb94f3ad1e",
+          "event": "activated",
+          "userId": "4e8cb80e-ac4b-46c2-aac1-8e028b4c0817"
+        }
+      ]
+    }
+  }
+}

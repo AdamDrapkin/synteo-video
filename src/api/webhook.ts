@@ -2,10 +2,17 @@ import express from 'express';
 import { validateWebhookSignature } from '@remotion/lambda-client';
 import { z } from 'zod';
 import { CONFIG } from './config.js';
+import { notifyRenderComplete, notifyError } from './slack.js';
+import { updateClipStatus, updateClipRenderOutput, isAirtableConfigured } from './airtable.js';
 
 // In-memory store for renderId -> n8nResumeUrl mapping
 // TODO(tech-debt): Replace with Redis for production multi-instance
-const pendingRenders = new Map<string, { resumeUrl: string; createdAt: number }>();
+const pendingRenders = new Map<string, {
+  resumeUrl: string;
+  campaignId: string;
+  clipId?: string;
+  createdAt: number;
+}>();
 
 // Cleanup old entries every 5 minutes
 const RENDER_TTL_MS = 30 * 60 * 1000; // 30 minutes
@@ -39,6 +46,9 @@ const RenderWithResumeSchema = z.object({
   inputProps: z.record(z.string(), z.unknown()).optional(),
   codec: z.enum(['h264', 'h265', 'vp8', 'vp9', 'prores']).optional(),
   n8nResumeUrl: z.string().url().optional(), // N8N webhook resume URL
+  campaignId: z.string().optional(), // For tracking in Slack/Airtable
+  clipId: z.string().optional(), // Airtable clip record ID
+  accountId: z.string().optional(), // Airtable social account ID
 });
 
 /**
@@ -51,7 +61,7 @@ export async function handleRenderWithWebhook(
 ) {
   try {
     const body = RenderWithResumeSchema.parse(req.body);
-    const { composition, inputProps = {}, codec = 'h264', n8nResumeUrl } = body;
+    const { composition, inputProps = {}, codec = 'h264', n8nResumeUrl, campaignId, clipId, accountId } = body;
 
     console.log(`[Render+Webhook] Starting render: ${composition}`);
 
@@ -79,12 +89,14 @@ export async function handleRenderWithWebhook(
     const result = await renderMediaOnLambda(renderInput);
 
     // Store resume URL if provided
-    if (n8nResumeUrl) {
+    if (n8nResumeUrl || clipId) {
       pendingRenders.set(result.renderId, {
-        resumeUrl: n8nResumeUrl,
+        resumeUrl: n8nResumeUrl || '',
+        campaignId: campaignId || 'unknown',
+        clipId,
         createdAt: Date.now(),
       });
-      console.log(`[Render+Webhook] Stored resume URL for ${result.renderId}`);
+      console.log(`[Render+Webhook] Stored resume URL for ${result.renderId}, campaign: ${campaignId || 'unknown'}, clipId: ${clipId || 'none'}`);
     }
 
     res.json({
@@ -157,6 +169,43 @@ export async function handleWebhook(req: express.Request, res: express.Response)
           outputFile: null,
           error: error || 'Render failed',
         };
+
+    // Send Slack notifications
+    const campaignId = renderData.campaignId;
+    const clipId = renderData.clipId;
+
+    if (done && outputFile) {
+      // Render completed successfully
+      await notifyRenderComplete({
+        renderId,
+        outputFile,
+        campaignId,
+      }).catch((err) => console.error('[Slack] Failed to send render complete:', err));
+
+      // Update Airtable clip record
+      if (clipId && isAirtableConfigured()) {
+        await updateClipRenderOutput(clipId, {
+          videoUrl: outputFile,
+          renderId,
+        }).catch((err) => console.error('[Airtable] Failed to update clip:', err));
+
+        await updateClipStatus(clipId, 'Ready for Review')
+          .catch((err) => console.error('[Airtable] Failed to update clip status:', err));
+      }
+    } else if (!done && error) {
+      // Render failed
+      await notifyError({
+        campaignId,
+        error,
+        stage: 'Lambda Render',
+      }).catch((err) => console.error('[Slack] Failed to send error:', err));
+
+      // Update Airtable clip status to rejected on failure
+      if (clipId && isAirtableConfigured()) {
+        await updateClipStatus(clipId, 'Rejected')
+          .catch((err) => console.error('[Airtable] Failed to update clip status:', err));
+      }
+    }
 
     // Trigger N8N resume webhook
     try {

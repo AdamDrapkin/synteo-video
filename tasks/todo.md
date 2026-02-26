@@ -1,105 +1,57 @@
-# Sprint 4: Express /media Endpoints
+# Sprint 8: Parallel Sub-Agent Architecture
 
 ## Status: COMPLETED
 
-### Completed
-- [x] Install FFmpeg and S3 dependencies
-- [x] Create POST /media/trim - FFmpeg video clipping
-- [x] Create POST /media/transcribe - Whisper transcription
-- [x] Create POST /media/upload - S3 file upload
-- [x] Create GET /media/download/:key - S3 file retrieval
-- [x] Create GET /media/url/:key - Presigned URL generation
-- [x] Pass TypeScript type check
+### Phase 1: API + Music Library Setup ✅ COMPLETED
+- [x] Add Music Library table to Airtable
+- [x] Create `/media/list-music` endpoint
+- [x] Create `/media/music-library` endpoint (for Claude prompt)
+- [x] Create `/media/music/:fileName` endpoint (stream from S3)
+- [x] Create `/media/mix-audio` endpoint (placeholder - FFmpeg impl in Sprint 9)
+- [x] Update Dockerfile with music env vars
+- [x] TypeScript passes
 
-### Endpoints Created
+### Phase 2: Prompts ✅ COMPLETED
+- [x] Update Prompt 2 with music selection
+- [x] Write complete Prompt 3 (QA validation)
+- [x] Create retry counter logic
+
+### Phase 3: N8N Sub-Workflows ✅ COMPLETED
+- [x] Create sub-workflows in N8N
+- [x] Add music download + mix steps
+- [x] Add Prompt 2 + Prompt 3
+- [x] Add retry loop logic
+
+### Phase 4: Main Orchestrator + Testing ✅ COMPLETED
+- [x] Update main orchestrator (Split Out)
+- [x] Test parallel execution
+- [x] Slack notifications
+- [x] Airtable batch write
+- [x] Add Status filter for Airtable trigger
+- [x] Add Airtable CLIP record creation
+
+### New Endpoints Added
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/media/trim` | POST | Trim video using FFmpeg (startTime, endTime) |
-| `/media/transcribe` | POST | Transcribe audio using OpenAI Whisper |
-| `/media/upload` | POST | Upload base64-encoded file to S3 |
-| `/media/download/*` | GET | Stream file from S3 |
-| `/media/url/*` | GET | Get presigned URL for S3 file |
+| `/media/list-music` | GET | List available music tracks |
+| `/media/music-library` | GET | Get library formatted for Claude |
+| `/media/music/:fileName | GET | Stream music from S3 |
+| `/media/mix-audio | POST | Mix video with music (placeholder) |
 
 ---
 
-# Sprint 5: Webhook + N8N Integration
+## N8N Workflows Created
 
-## Status: COMPLETED
-
-### Completed
-- [x] Create POST /webhook - Remotion Lambda callback receiver
-- [x] HMAC SHA-512 signature validation via validateWebhookSignature
-- [x] Create POST /render-with-webhook - render + store N8N resume URL
-- [x] In-memory renderId → n8nResumeUrl mapping
-- [x] Auto-cleanup stale mappings (30min TTL)
-- [x] Pass TypeScript type check
-
-### Webhook Flow
-
-```
-N8N → POST /render-with-webhook
-                    ↓
-         renderMediaOnLambda(webhook: { url, secret })
-                    ↓
-         Stores renderId → n8nResumeUrl
-                    ↓
-         Lambda renders...
-                    ↓
-Remotion Lambda → POST /webhook (HMAC validated)
-                    ↓
-         Extracts outputFile from payload
-                    ↓
-         GET n8nResumeUrl?data={ status, outputFile }
-```
-
-### Environment Variables Required
-- `WEBHOOK_SECRET` - HMAC secret for signature validation
-- `N8N_BASE_URL` - N8N instance URL
-- `API_BASE_URL` - Public URL for webhook callback
-
----
-
-# Sprint 6: N8N 22-Node Workflow
-
-## Status: COMPLETED (v2 - Production Ready)
-
-### Created
-- [x] n8n-workflow.json - Importable N8N workflow
-
-### Improvements Made (v2)
-- UUID v4 node IDs for valid import
-- 220px coordinate spacing
-- Credential placeholders marked with [REPLACE: ...]
-- Retry logic on all HTTP Request nodes
-- Error handler branch with Slack alert
-- Wait nodes for human gates (30min/60min timeouts)
-- Proper SplitInBatches loop exit connection
-
-### Workflow Nodes (24 total)
-
-| Phase | Nodes |
-|-------|-------|
-| Setup & Intelligence | 1-8: Trigger → Config → Transcript → Build P1 → Claude P1 → Parse → Slack → Wait |
-| Per-Clip Loop | 9-14: Loop → Build P2 → Claude P2 → Parse → Slack → Wait → Parse |
-| Media Processing | 15-17: Trim Hook+Main → Transcribe → Build Props |
-| Render | 18-19: POST Render → Wait for Lambda |
-| Review & Record | 20-24: Final Review → Wait → Parse → Airtable → Slack → Respond |
-| Error Handler | Error Trigger → Slack Alert |
-
-### Environment Variables Required (in N8N)
-- `API_BASE_URL` - Express API URL
-- `SUPADATA_API_URL` - Supadata API URL
-- `SUPADATA_API_KEY` - Supadata API Key
-- `AIRTABLE_APP_ID` - Airtable base ID
-
-### Credentials Required (in N8N)
-- Slack Bot Token
-- Airtable Personal Access Token
-- Anthropic API Key
-- Supadata API Key
+1. **Main Orchestrator** (qGdcGbOnLikzE3Jl)
+2. **Clip Sub-Workflow** (UD2mtYrRGArv3m5T)
+3. **Render Sub-Workflow** (WZdpcH7TjKgwq87N)
+4. **Posting Manager** (JSON export file)
 
 ---
 
 ## Next Steps
-- Sprint 7: Airtable + Slack integration
+
+- Phase 9: Testing & Multi-Campaign Management
+- Phase 10: Social Account Integration
+- Phase 11: Analytics & Performance Tracking
