@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      # AWS
+      - AWS_REGION=us-east-1
+      - LAMBDA_FUNCTION=remotion-render-4-0-427-mem2048mb-disk2048mb-120sec
+      - SERVE_URL=https://remotionLambda-useast1-7nig21l89j.s3.us-east-1.amazonaws.com/sites/mkw9luttk2
+      - S3_BUCKET=synteo-video
+      - MUSIC_S3_BUCKET=synteo-music-library
+
+      # API
+      - API_BASE_URL=http://localhost:3000
+      - PORT=3000
+      - NODE_ENV=production
+
+      # Webhook
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET:-change-me-in-production}
+
+      # N8N
+      - N8N_BASE_URL=${N8N_BASE_URL:-http://localhost:5678}
+
+      # Slack (set via .env or docker-compose override)
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}
+      - SLACK_CHANNEL_ID=${SLACK_CHANNEL_ID:-}
+      - SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET:-}
+
+      # Airtable (set via .env or docker-compose override)
+      - AIRTABLE_API_KEY=${AIRTABLE_API_KEY:-}
+      - AIRTABLE_BASE_ID=${AIRTABLE_BASE_ID:-apprfl6zJJVMW2FDi}
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    volumes:
+      - /tmp:/tmp  # For FFmpeg temp files
+
+  # Optional: N8N for workflow orchestration
+  # n8n:
+  #   image: n8nio/n8n:latest
+  #   ports:
+  #     - "5678:5678"
+  #   environment:
+  #     - N8N_BASIC_AUTH_ACTIVE=true
+  #     - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
+  #     - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-}
+  #     - N8N_HOST=${N8N_HOST:-localhost}
+  #     - N8N_PROTOCOL=http
+  #   volumes:
+  #     - n8n_data:/home/node/.n8n
+  #   restart: unless-stopped
+
+# volumes:
+#   n8n_data:
+
+networks:
+  default:
+    name: synteo-network
