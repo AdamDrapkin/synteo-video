@@ -228,13 +228,15 @@ export async function handleDownloadUrl(req: express.Request, res: express.Respo
     let contentType = response.headers.get('content-type') || '';
     if (contentType.includes('text/html')) {
       const html = await response.text();
+      console.log(`Google Drive HTML response (first 500 chars): ${html.substring(0, 500)}`);
 
       // Try to extract confirm token from Google Drive HTML
       const confirmMatch = html.match(/confirm=([^&"]+)/);
+      console.log(`Confirm match result:`, confirmMatch);
       if (confirmMatch && confirmMatch[1]) {
         const confirmToken = confirmMatch[1];
         const downloadUrl = `${url}&confirm=${confirmToken}`;
-        console.log(`Google Drive: following confirmation redirect with token`);
+        console.log(`Google Drive: following confirmation redirect with token: ${confirmToken}`);
 
         response = await fetch(downloadUrl, {
           headers: {
