@@ -292,17 +292,6 @@ export async function handleDownloadUrl(req: express.Request, res: express.Respo
       });
     }
 
-    // Get the buffer
-    const buffer = Buffer.from(await response.arrayBuffer());
-
-    // File size limit: 500MB max
-    const MAX_FILE_SIZE = 500 * 1024 * 1024;
-    if (buffer.length > MAX_FILE_SIZE) {
-      return res.status(400).json({
-        error: `File too large. Maximum size is 500MB, got ${(buffer.length / 1024 / 1024).toFixed(2)}MB`,
-      });
-    }
-
     // Determine filename
     const name = fileName || `download-${Date.now()}`;
     const ext = contentType.split('/')[1] || 'mp4';
@@ -312,20 +301,51 @@ export async function handleDownloadUrl(req: express.Request, res: express.Respo
     const timestamp = Date.now();
     const key = `uploads/${timestamp}-${finalFileName}`;
 
-    // Upload to S3
-    const upload = new Upload({
-      client: s3Client,
-      params: {
-        Bucket: CONFIG.aws.bucketName,
-        Key: key,
-        Body: buffer,
-        ContentType: contentType,
-      },
-    });
+    console.log(`Streaming file to S3: ${key}`);
 
-    await upload.done();
+    // Stream upload to S3 (supports large files)
+    // Use PassThrough to stream the response body directly to S3
+    const { PassThrough } = await import('stream');
+    const passThrough = new PassThrough();
 
-    // Get public URL (assuming bucket is public or use presigned)
+    // Start the S3 upload in parallel with downloading
+    const uploadPromise = (async () => {
+      const upload = new Upload({
+        client: s3Client,
+        params: {
+          Bucket: CONFIG.aws.bucketName,
+          Key: key,
+          Body: passThrough,
+          ContentType: contentType,
+        },
+      });
+      await upload.done();
+    })();
+
+    // Pipe the response to the passThrough stream
+    const reader = response.body?.getReader();
+    if (!reader) {
+      return res.status(500).json({ error: 'Could not read response body' });
+    }
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          passThrough.end();
+          break;
+        }
+        passThrough.write(Buffer.from(value));
+      }
+    } catch (error) {
+      passThrough.destroy();
+      throw error;
+    }
+
+    // Wait for upload to complete
+    await uploadPromise;
+
+    // Get public URL
     const publicUrl = `https://${CONFIG.aws.bucketName}.s3.${CONFIG.aws.region}.amazonaws.com/${key}`;
 
     console.log(`Uploaded to S3: ${key}`);
@@ -334,7 +354,6 @@ export async function handleDownloadUrl(req: express.Request, res: express.Respo
       key,
       url: publicUrl,
       contentType,
-      size: buffer.length,
     });
   } catch (error) {
     console.error('Download URL error:', error);
