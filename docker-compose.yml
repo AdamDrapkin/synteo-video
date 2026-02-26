@@ -46,32 +46,6 @@ services:
     volumes:
       - /tmp:/tmp  # For FFmpeg temp files
 
-  # N8N for workflow orchestration - with Python support
-  n8n:
-    build:
-      context: .
-      dockerfile: n8n.Dockerfile
-    ports:
-      - "5678:5678"
-    environment:
-      - N8N_BASIC_AUTH_ACTIVE=true
-      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
-      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-}
-      - N8N_HOST=${N8N_HOST:-localhost}
-      - N8N_PROTOCOL=http
-      - EXECUTIONS_MODE=regular
-      - NODE_RUNNERS_ACTIVE=true
-    user: root
-    volumes:
-      - n8n_data:/home/node/.n8n
-      - /tmp:/tmp  # For FFmpeg temp files
-    restart: unless-stopped
-    depends_on:
-      - api
-
-volumes:
-  n8n_data:
-
 networks:
   default:
     name: synteo-network
