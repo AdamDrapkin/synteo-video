@@ -230,9 +230,10 @@ export async function handleDownloadUrl(req: express.Request, res: express.Respo
       const html = await response.text();
       console.log(`Google Drive HTML response (first 500 chars): ${html.substring(0, 500)}`);
 
-      // Try to extract confirm token from Google Drive HTML
-      const confirmMatch = html.match(/confirm=([^&"]+)/);
-      console.log(`Confirm match result:`, confirmMatch);
+      // Try multiple patterns to extract download URL from Google Drive HTML
+
+      // Pattern 1: confirm= token in URL
+      let confirmMatch = html.match(/confirm=([^&"]+)/);
       if (confirmMatch && confirmMatch[1]) {
         const confirmToken = confirmMatch[1];
         const downloadUrl = `${url}&confirm=${confirmToken}`;
@@ -247,9 +248,31 @@ export async function handleDownloadUrl(req: express.Request, res: express.Respo
 
         contentType = response.headers.get('content-type') || '';
       } else {
-        return res.status(400).json({
-          error: 'Could not extract download URL from Google Drive response',
-        });
+        // Pattern 2: look for form action URL
+        const formActionMatch = html.match(/action="([^"]+)"/);
+        if (formActionMatch && formActionMatch[1]) {
+          const formAction = formActionMatch[1];
+          // Extract any hidden form values
+          const formTokenMatch = html.match(/name="confirm" value="([^"]+)"/);
+          const formToken = formTokenMatch ? formTokenMatch[1] : '';
+
+          const downloadUrl = formAction + (formToken ? `&confirm=${formToken}` : '');
+          console.log(`Google Drive: using form action URL: ${downloadUrl}`);
+
+          response = await fetch(downloadUrl, {
+            method: 'POST',
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            },
+            redirect: 'follow',
+          });
+
+          contentType = response.headers.get('content-type') || '';
+        } else {
+          return res.status(400).json({
+            error: 'Could not extract download URL from Google Drive response',
+          });
+        }
       }
     }
 
