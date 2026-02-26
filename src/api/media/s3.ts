@@ -304,13 +304,37 @@ export async function handleDownloadUrl(req: express.Request, res: express.Respo
         const formTokenMatch = html.match(/name="confirm" value="([^"]+)"/);
 
         if (formActionMatch && formActionMatch[1]) {
-          // Extract file ID from the original URL
+          // Extract file ID from the response URL (after redirect) or original URL
+          let fileId = '';
           const fileIdMatch = url.match(/id=([^&]+)/);
-          const fileId = fileIdMatch ? fileIdMatch[1] : '';
+          if (fileIdMatch && fileIdMatch[1]) {
+            fileId = fileIdMatch[1];
+          } else {
+            // Try extracting from response URL
+            const responseFileIdMatch = response.url.match(/id=([^&]+)/);
+            if (responseFileIdMatch && responseFileIdMatch[1]) {
+              fileId = responseFileIdMatch[1];
+            }
+          }
+
           const formToken = formTokenMatch ? formTokenMatch[1] : 't';
 
+          console.log(`DEBUG: extracted fileId='${fileId}' from url='${url}', response.url='${response.url}'`);
+          console.log(`DEBUG: formActionMatch[1]='${formActionMatch[1]}'`);
+
+          if (!fileId) {
+            console.log('ERROR: Could not extract file ID from URL');
+            return res.status(400).json({
+              error: 'Could not extract file ID from Google Drive URL',
+            });
+          }
+
           // Build proper download URL with id parameter
-          const downloadUrl = `${formActionMatch[1]}?id=${fileId}&confirm=${formToken}`;
+          // Check if form action already has query params
+          const hasQueryParams = formActionMatch[1].includes('?');
+          const downloadUrl = hasQueryParams
+            ? `${formActionMatch[1]}&id=${fileId}&confirm=${formToken}`
+            : `${formActionMatch[1]}?id=${fileId}&confirm=${formToken}`;
           console.log(`Google Drive: using form action URL: ${downloadUrl}`);
 
           response = await fetch(downloadUrl, {
@@ -350,9 +374,41 @@ export async function handleDownloadUrl(req: express.Request, res: express.Respo
 
     // If still HTML after all attempts, log and fail with useful message
     if (contentType.includes('text/html')) {
-      console.log(`WARNING: Still HTML after all redirect getting attempts. Final URL: ${response.url}`);
-      const finalHtml = await response.text();
-      console.log(`Final HTML (first 500 chars): ${finalHtml.substring(0, 500)}`);
+      // Check for specific Google Drive error pages
+      const htmlCheck = await response.text();
+
+      if (htmlCheck.includes('Quota exceeded') || htmlCheck.includes('quota')) {
+        console.log('Google Drive quota exceeded - this is a rate limiting issue from Google');
+        return res.status(429).json({
+          error: 'Google Drive download quota exceeded. This usually means the server IP has been rate-limited by Google. Try again later, or use a different file hosting service.',
+        });
+      }
+
+      if (htmlCheck.includes('Virus scan warning') || htmlCheck.includes('virus')) {
+        console.log('Google Drive virus scan warning - trying alternative approach');
+        // Try with different confirmation approach
+        const confirmMatch = htmlCheck.match(/confirm=([a-zA-Z0-9_-]+)/);
+        if (confirmMatch) {
+          const newUrl = `${response.url}&confirm=${confirmMatch[1]}`;
+          console.log(`Retrying with confirm token: ${newUrl}`);
+          response = await fetch(newUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Referer': 'https://drive.google.com/',
+            },
+            redirect: 'follow',
+          });
+          contentType = response.headers.get('content-type') || '';
+          if (!contentType.includes('text/html')) {
+            console.log(`Success on retry! content-type: ${contentType}`);
+          }
+        }
+      }
+
+      if (contentType.includes('text/html')) {
+        console.log(`WARNING: Still HTML after all redirect getting attempts. Final URL: ${response.url}`);
+        console.log(`Final HTML (first 500 chars): ${htmlCheck.substring(0, 500)}`);
+      }
     }
 
     if (!response.ok) {
