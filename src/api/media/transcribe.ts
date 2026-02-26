@@ -59,12 +59,17 @@ export async function handleTranscribe(req: express.Request, res: express.Respon
     const ext = path.extname(new URL(audioUrl).pathname) || '.mp3';
     const tempPath = path.join(tempDir, `audio-${Date.now()}${ext}`);
 
+    console.log('[Transcribe] Downloading file...');
     await downloadFile(audioUrl, tempPath);
+    console.log('[Transcribe] File downloaded');
 
     // Read file into memory
+    console.log('[Transcribe] Reading file...');
     const audioData = await fs.readFile(tempPath);
+    console.log(`[Transcribe] File read, size: ${audioData.length} bytes`);
 
     // Create FormData
+    console.log('[Transcribe] Calling Whisper API...');
     const formData = new FormData();
     formData.append('file', new Blob([audioData]), `audio${ext}`);
     formData.append('model', model);
