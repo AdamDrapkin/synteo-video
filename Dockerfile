@@ -2,8 +2,9 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install FFmpeg for video processing
-RUN apk add --no-cache ffmpeg
+# Install FFmpeg and yt-dlp for video processing
+RUN apk add --no-cache ffmpeg python3 py3-pip
+RUN pip3 install yt-dlp --break-system-packages
 
 COPY package*.json ./
 RUN npm install

@@ -4,7 +4,11 @@ import path from 'path';
 import fs from 'fs/promises';
 import os from 'os';
 import { z } from 'zod';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import { CONFIG } from '../config.js';
+
+const execAsync = promisify(exec);
 
 // Set ffmpeg path
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
@@ -29,17 +33,57 @@ export const ExtractFramesRequestSchema = z.object({
 const MAX_VISION_DURATION_SECONDS = 60 * 60; // 3600 seconds
 
 /**
+ * Detect if URL is a YouTube video
+ */
+function isYouTubeUrl(url: string): boolean {
+  const youtubePatterns = [
+    /youtube\.com\/watch/,
+    /youtu\.be\//,
+    /youtube\.com\/shorts\//,
+    /youtube\.com\/v\//,
+    /youtube\.com\/embed\//,
+  ];
+  return youtubePatterns.some(pattern => pattern.test(url));
+}
+
+/**
+ * Get direct video URL from YouTube using yt-dlp
+ */
+async function getYouTubeDirectUrl(youtubeUrl: string): Promise<string> {
+  console.log(`[ExtractFrames] Detected YouTube URL, fetching direct video URL with yt-dlp...`);
+
+  try {
+    // Get direct video URL (best quality video + audio merged)
+    const { stdout } = await execAsync(
+      `yt-dlp -f "best[ext=mp4]" --get-url "${youtubeUrl}"`,
+      { maxBuffer: 50 * 1024 * 1024 } // 50MB buffer
+    );
+
+    const directUrl = stdout.trim();
+    if (!directUrl) {
+      throw new Error('yt-dlp returned empty URL');
+    }
+
+    console.log(`[ExtractFrames] Got direct URL: ${directUrl.substring(0, 100)}...`);
+    return directUrl;
+  } catch (error) {
+    console.error('[ExtractFrames] yt-dlp error:', error);
+    throw new Error(`Failed to extract YouTube video: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+/**
  * Calculate optimal interval based on video duration
- * 0-10 min: 1s intervals
- * 10-20 min: 2s intervals
- * 20-60 min: 3s intervals
+ * 0-10 min: 1s intervals (more detail for short videos)
+ * 10-30 min: 2s intervals (balanced)
+ * 30+ min: 3s intervals (fewer frames for long videos)
  */
 function calculateOptimalInterval(durationSeconds: number): number {
   if (durationSeconds <= 600) { // 0-10 min
     return 1;
-  } else if (durationSeconds <= 1200) { // 10-20 min
+  } else if (durationSeconds <= 1800) { // 10-30 min
     return 2;
-  } else { // 20-60 min
+  } else { // 30+ min
     return 3;
   }
 }
@@ -75,17 +119,24 @@ export async function handleExtractFrames(req: express.Request, res: express.Res
       });
     }
 
+    // Check if YouTube URL and get direct video URL
+    let processedVideoUrl = videoUrl;
+    const sourceType = isYouTubeUrl(videoUrl) ? 'youtube' : 'direct';
+    if (isYouTubeUrl(videoUrl)) {
+      processedVideoUrl = await getYouTubeDirectUrl(videoUrl);
+    }
+
     // Create temp directory
     const tempDir = path.join(os.tmpdir(), `frames-${Date.now()}`);
     await fs.mkdir(tempDir, { recursive: true });
 
-    const inputExt = path.extname(new URL(videoUrl).pathname) || '.mp4';
+    const inputExt = path.extname(new URL(processedVideoUrl).pathname) || '.mp4';
     const inputPath = path.join(tempDir, `input${inputExt}`);
 
-    console.log(`[ExtractFrames] Downloading ${videoUrl} to ${inputPath}`);
+    console.log(`[ExtractFrames] Downloading ${processedVideoUrl} to ${inputPath}`);
 
-    // Download input file from S3/HTTP
-    await downloadFile(videoUrl, inputPath);
+    // Download input file from S3/HTTP (or YouTube direct URL)
+    await downloadFile(processedVideoUrl, inputPath);
 
     // Get video duration first
     const duration = await getVideoDuration(inputPath);
@@ -189,6 +240,8 @@ export async function handleExtractFrames(req: express.Request, res: express.Res
       intervalSeconds,
       duration: effectiveDuration,
       startSecond,
+      sourceType,
+      originalUrl: sourceType === 'youtube' ? videoUrl : undefined,
       chunkInfo: {
         startSecond,
         duration: effectiveDuration,
