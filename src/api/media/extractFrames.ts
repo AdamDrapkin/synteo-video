@@ -20,6 +20,9 @@ export const ExtractFramesRequestSchema = z.object({
   intervalSeconds: z.number().min(1).max(30).optional(),
   maxFrames: z.number().min(1).max(300).optional().default(300), // Allow up to 300 frames (increased for 1s intervals)
   outputFormat: z.enum(['jpg', 'png']).optional().default('jpg'),
+  // For parallel extraction - extract a specific time range
+  startSecond: z.number().min(0).optional().default(0),
+  duration: z.number().min(1).max(600).optional(), // Max 10 min per chunk
 });
 
 // Max video duration for vision processing (60 minutes)
@@ -58,10 +61,10 @@ export interface ExtractFramesResult {
 export async function handleExtractFrames(req: express.Request, res: express.Response) {
   try {
     const body = ExtractFramesRequestSchema.parse(req.body);
-    const { videoUrl, intervalSeconds: userInterval, maxFrames, outputFormat } = body;
+    const { videoUrl, intervalSeconds: userInterval, maxFrames, outputFormat, startSecond, duration: chunkDuration } = body;
 
     console.log(`[ExtractFrames] Starting extraction from ${videoUrl}`);
-    console.log(`[ExtractFrames] Max frames: ${maxFrames}`);
+    console.log(`[ExtractFrames] Max frames: ${maxFrames}, startSecond: ${startSecond}, chunkDuration: ${chunkDuration || 'full'}`);
 
     // Validate URL format
     try {
@@ -99,8 +102,14 @@ export async function handleExtractFrames(req: express.Request, res: express.Res
     const intervalSeconds = userInterval || calculateOptimalInterval(duration);
     console.log(`[ExtractFrames] Using interval: ${intervalSeconds}s (auto-calculated based on duration)`);
 
+    // Determine extraction window
+    const effectiveDuration = chunkDuration
+      ? Math.min(chunkDuration, duration - startSecond)
+      : duration - startSecond;
+    console.log(`[ExtractFrames] Extracting from ${startSecond}s for ${effectiveDuration}s`);
+
     // Calculate actual number of frames to extract
-    const actualFrameCount = Math.min(Math.floor(duration / intervalSeconds), maxFrames);
+    const actualFrameCount = Math.min(Math.floor(effectiveDuration / intervalSeconds), maxFrames);
     console.log(`[ExtractFrames] Will extract ${actualFrameCount} frames`);
 
     // Extract frames using FFmpeg
@@ -113,6 +122,7 @@ export async function handleExtractFrames(req: express.Request, res: express.Res
       const timeout = 600000; // 10 minute timeout for 20min video processing
 
       const cmd = ffmpeg(inputPath)
+        .setStartTime(startSecond)
         .outputOptions([
           `-vf`, `fps=1/${intervalSeconds}`,
           `-frames:v`, `${actualFrameCount}`,
@@ -150,11 +160,14 @@ export async function handleExtractFrames(req: express.Request, res: express.Res
 
     console.log(`[ExtractFrames] Found ${frameFiles.length} frame files`);
 
-    // Upload frames to S3
+    // Upload frames to S3 with offset for parallel extraction
     const frameUrls: string[] = [];
-    for (const frameFile of frameFiles) {
+    const frameOffset = Math.floor(startSecond / intervalSeconds); // Frame number offset
+    for (let i = 0; i < frameFiles.length; i++) {
+      const frameFile = frameFiles[i];
       const framePath = path.join(tempDir, frameFile);
-      const frameKey = `frames/${Date.now()}-${frameFile}`;
+      const frameNumber = i + 1 + frameOffset; // Offset for chunk numbering
+      const frameKey = `frames/${Date.now()}-frame_${String(frameNumber).padStart(4, '0')}.${outputFormat}`;
       const frameUrl = await uploadToS3(framePath, frameKey, `image/${outputFormat}`);
       frameUrls.push(frameUrl);
       console.log(`[ExtractFrames] Uploaded: ${frameUrl}`);
@@ -174,7 +187,13 @@ export async function handleExtractFrames(req: express.Request, res: express.Res
       frames: frameUrls,
       frameCount: frameUrls.length,
       intervalSeconds,
-      duration,
+      duration: effectiveDuration,
+      startSecond,
+      chunkInfo: {
+        startSecond,
+        duration: effectiveDuration,
+        frameOffset: Math.floor(startSecond / intervalSeconds),
+      },
     });
   } catch (error) {
     console.error('ExtractFrames error:', error);
