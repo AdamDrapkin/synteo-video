@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { CONFIG } from '../config.js';
+import crypto from 'crypto';
 
 const execAsync = promisify(exec);
 
@@ -14,9 +15,52 @@ const execAsync = promisify(exec);
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
+// Video cache directory
+const VIDEO_CACHE_DIR = path.join(os.tmpdir(), 'synteo-video-cache');
+
+// Ensure cache directory exists
+await fs.mkdir(VIDEO_CACHE_DIR, { recursive: true });
+
+/**
+ * Generate a cache key (hash) from video URL
+ */
+function getVideoCacheKey(videoUrl: string): string {
+  return crypto.createHash('md5').update(videoUrl).digest('hex');
+}
+
+/**
+ * Get cached video path or download if not cached
+ */
+async function getVideoFromCache(videoUrl: string, sourceType: 'youtube' | 'direct'): Promise<string> {
+  const cacheKey = getVideoCacheKey(videoUrl);
+  const cachedPath = path.join(VIDEO_CACHE_DIR, `${cacheKey}.mp4`);
+
+  // Check if already cached
+  try {
+    await fs.access(cachedPath);
+    console.log(`[ExtractFrames] Using cached video: ${cachedPath}`);
+    return cachedPath;
+  } catch {
+    // Not cached, need to download
+  }
+
+  // Get the actual URL to download (YouTube or direct)
+  let downloadUrl = videoUrl;
+  if (sourceType === 'youtube') {
+    downloadUrl = await getYouTubeDirectUrl(videoUrl);
+  }
+
+  console.log(`[ExtractFrames] Downloading video to cache: ${cachedPath}`);
+  await downloadFile(downloadUrl, cachedPath);
+  console.log(`[ExtractFrames] Video cached successfully`);
+
+  return cachedPath;
+}
+
 // Request validation schema
 export const ExtractFramesRequestSchema = z.object({
-  videoUrl: z.string(), // S3 URL or local path
+  videoUrl: z.string().optional(), // S3 URL or YouTube URL
+  cacheKey: z.string().optional(), // Pre-cached video key (from /media/prepare-video)
   // If not provided, interval is calculated automatically based on duration:
   // 0-10 min: 1s intervals
   // 10-20 min: 2s intervals
@@ -27,10 +71,9 @@ export const ExtractFramesRequestSchema = z.object({
   // For parallel extraction - extract a specific time range
   startSecond: z.number().min(0).optional().default(0),
   duration: z.number().min(1).max(600).optional(), // Max 10 min per chunk
+}).refine(data => data.videoUrl || data.cacheKey, {
+  message: "Either videoUrl or cacheKey must be provided",
 });
-
-// Max video duration for vision processing (60 minutes)
-const MAX_VISION_DURATION_SECONDS = 60 * 60; // 3600 seconds
 
 /**
  * Detect if URL is a YouTube video
@@ -101,62 +144,75 @@ export interface ExtractFramesResult {
  * POST /media/extract-frames
  * Extract frames from video at specified intervals using FFmpeg
  * Used for Gemini Vision analysis - extracts multiple frames for video understanding
+ * Supports both videoUrl and pre-cached cacheKey for parallel processing
  */
 export async function handleExtractFrames(req: express.Request, res: express.Response) {
   try {
     const body = ExtractFramesRequestSchema.parse(req.body);
-    const { videoUrl, intervalSeconds: userInterval, maxFrames, outputFormat, startSecond, duration: chunkDuration } = body;
+    const { videoUrl, cacheKey, intervalSeconds: userInterval, maxFrames, outputFormat, startSecond, duration: chunkDuration } = body;
 
-    console.log(`[ExtractFrames] Starting extraction from ${videoUrl}`);
+    console.log(`[ExtractFrames] Starting extraction`);
     console.log(`[ExtractFrames] Max frames: ${maxFrames}, startSecond: ${startSecond}, chunkDuration: ${chunkDuration || 'full'}`);
 
-    // Validate URL format
-    try {
-      new URL(videoUrl);
-    } catch {
-      return res.status(400).json({
-        error: 'Invalid videoUrl: must be a valid URL',
-      });
-    }
+    let inputPath: string;
+    let sourceType: 'youtube' | 'direct' | 'cached' = 'direct';
+    let videoDuration: number;
 
-    // Check if YouTube URL and get direct video URL
-    let processedVideoUrl = videoUrl;
-    const sourceType = isYouTubeUrl(videoUrl) ? 'youtube' : 'direct';
-    if (isYouTubeUrl(videoUrl)) {
-      processedVideoUrl = await getYouTubeDirectUrl(videoUrl);
-    }
+    // Check if using cached video or downloading fresh
+    if (cacheKey) {
+      // Use pre-cached video
+      inputPath = path.join(VIDEO_CACHE_DIR, `${cacheKey}.mp4`);
+      console.log(`[ExtractFrames] Using cached video: ${inputPath}`);
 
-    // Create temp directory
-    const tempDir = path.join(os.tmpdir(), `frames-${Date.now()}`);
-    await fs.mkdir(tempDir, { recursive: true });
+      // Verify cache exists
+      try {
+        await fs.access(inputPath);
+      } catch {
+        return res.status(400).json({
+          error: `Cache not found for key: ${cacheKey}. Please call /media/prepare-video first.`,
+        });
+      }
+      sourceType = 'cached';
+      videoDuration = await getVideoDuration(inputPath);
+      console.log(`[ExtractFrames] Cached video duration: ${videoDuration}s`);
+    } else {
+      // Download video (original behavior)
+      if (!videoUrl) {
+        return res.status(400).json({
+          error: 'videoUrl is required when not using cacheKey',
+        });
+      }
 
-    const inputExt = path.extname(new URL(processedVideoUrl).pathname) || '.mp4';
-    const inputPath = path.join(tempDir, `input${inputExt}`);
+      // Validate URL format
+      try {
+        new URL(videoUrl);
+      } catch {
+        return res.status(400).json({
+          error: 'Invalid videoUrl: must be a valid URL',
+        });
+      }
 
-    console.log(`[ExtractFrames] Downloading ${processedVideoUrl} to ${inputPath}`);
+      // Check if YouTube URL and get direct video URL
+      let processedVideoUrl = videoUrl;
+      sourceType = isYouTubeUrl(videoUrl) ? 'youtube' : 'direct';
+      if (isYouTubeUrl(videoUrl)) {
+        processedVideoUrl = await getYouTubeDirectUrl(videoUrl);
+      }
 
-    // Download input file from S3/HTTP (or YouTube direct URL)
-    await downloadFile(processedVideoUrl, inputPath);
-
-    // Get video duration first
-    const duration = await getVideoDuration(inputPath);
-    console.log(`[ExtractFrames] Video duration: ${duration}s`);
-
-    // Validate video duration
-    if (duration > MAX_VISION_DURATION_SECONDS) {
-      return res.status(400).json({
-        error: `Video too long for vision processing. Maximum duration is ${MAX_VISION_DURATION_SECONDS / 60} minutes, got ${(duration / 60).toFixed(1)} minutes`,
-      });
+      // Get video from cache (downloads if not cached)
+      inputPath = await getVideoFromCache(processedVideoUrl, sourceType);
+      videoDuration = await getVideoDuration(inputPath);
+      console.log(`[ExtractFrames] Video duration: ${videoDuration}s`);
     }
 
     // Calculate optimal interval if not provided
-    const intervalSeconds = userInterval || calculateOptimalInterval(duration);
+    const intervalSeconds = userInterval || calculateOptimalInterval(videoDuration);
     console.log(`[ExtractFrames] Using interval: ${intervalSeconds}s (auto-calculated based on duration)`);
 
     // Determine extraction window
     const effectiveDuration = chunkDuration
-      ? Math.min(chunkDuration, duration - startSecond)
-      : duration - startSecond;
+      ? Math.min(chunkDuration, videoDuration - startSecond)
+      : videoDuration - startSecond;
     console.log(`[ExtractFrames] Extracting from ${startSecond}s for ${effectiveDuration}s`);
 
     // Calculate actual number of frames to extract
@@ -309,4 +365,64 @@ async function uploadToS3(localPath: string, key: string, contentType: string): 
   await upload.done();
 
   return `https://${CONFIG.aws.bucketName}.s3.${CONFIG.aws.region}.amazonaws.com/${key}`;
+}
+
+// Request validation schema for prepare-video
+const PrepareVideoRequestSchema = z.object({
+  videoUrl: z.string(), // S3 URL or YouTube URL
+});
+
+// Response type
+export interface PrepareVideoResult {
+  success: boolean;
+  cacheKey: string;
+  videoDuration: number;
+  message: string;
+}
+
+/**
+ * POST /media/prepare-video
+ * Pre-download and cache a video for parallel frame extraction
+ * Returns a cacheKey that can be used in extract-frames for fast parallel processing
+ */
+export async function handlePrepareVideo(req: express.Request, res: express.Response) {
+  try {
+    const body = PrepareVideoRequestSchema.parse(req.body);
+    const { videoUrl } = body;
+
+    console.log(`[PrepareVideo] Preparing video: ${videoUrl}`);
+
+    // Validate URL format
+    try {
+      new URL(videoUrl);
+    } catch {
+      return res.status(400).json({
+        error: 'Invalid videoUrl: must be a valid URL',
+      });
+    }
+
+    // Check if YouTube
+    const sourceType = isYouTubeUrl(videoUrl) ? 'youtube' : 'direct';
+
+    // Get video (will download if not cached)
+    const inputPath = await getVideoFromCache(videoUrl, sourceType);
+
+    // Get duration
+    const videoDuration = await getVideoDuration(inputPath);
+    const cacheKey = getVideoCacheKey(videoUrl);
+
+    console.log(`[PrepareVideo] Video prepared: ${cacheKey}, duration: ${videoDuration}s`);
+
+    res.json({
+      success: true,
+      cacheKey,
+      videoDuration,
+      message: `Video cached successfully. Use cacheKey in /media/extract-frames for fast parallel processing.`,
+    });
+  } catch (error) {
+    console.error('PrepareVideo error:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
 }

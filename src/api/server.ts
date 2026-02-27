@@ -127,6 +127,9 @@ app.post('/media/trim', handleTrim);
 // POST /media/extract-frames - Extract frames from video at intervals (for Gemini Vision)
 app.post('/media/extract-frames', handleExtractFrames);
 
+// POST /media/prepare-video - Pre-download and cache video for parallel processing
+app.post('/media/prepare-video', handlePrepareVideo);
+
 // POST /media/transcribe - Transcribe audio using Whisper
 app.post('/media/transcribe', handleTranscribe);
 
