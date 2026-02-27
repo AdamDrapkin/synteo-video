@@ -1,6 +1,7 @@
 // Media API handlers - barrel export
 export { handleUpload, handleDownload, handleGetUrl, handleDownloadUrl, s3Client } from './s3.js';
 export { handleTrim, TrimRequestSchema } from './trim.js';
+export { handleExtractFrames, ExtractFramesRequestSchema } from './extractFrames.js';
 export { handleTranscribe, TranscribeRequestSchema } from './transcribe.js';
 export {
   handleListMusic,

@@ -7,6 +7,7 @@ import {
   handleGetUrl,
   handleDownloadUrl,
   handleTrim,
+  handleExtractFrames,
   handleTranscribe,
   handleListMusic,
   handleGetMusicStream,
@@ -122,6 +123,9 @@ app.get('/progress/:renderId', async (req, res) => {
 
 // POST /media/trim - Trim video using FFmpeg
 app.post('/media/trim', handleTrim);
+
+// POST /media/extract-frames - Extract frames from video at intervals (for Gemini Vision)
+app.post('/media/extract-frames', handleExtractFrames);
 
 // POST /media/transcribe - Transcribe audio using Whisper
 app.post('/media/transcribe', handleTranscribe);
