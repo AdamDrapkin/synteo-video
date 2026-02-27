@@ -8,6 +8,7 @@ import {
   handleDownloadUrl,
   handleTrim,
   handleExtractFrames,
+  handlePrepareVideo,
   handleTranscribe,
   handleListMusic,
   handleGetMusicStream,
