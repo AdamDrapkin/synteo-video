@@ -14,30 +14,30 @@ ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 export const ExtractFramesRequestSchema = z.object({
   videoUrl: z.string(), // S3 URL or local path
   // If not provided, interval is calculated automatically based on duration:
-  // 0-5 min: 3s intervals
-  // 5-10 min: 6s intervals
-  // 10-20 min: 9s intervals
+  // 0-10 min: 1s intervals
+  // 10-20 min: 2s intervals
+  // 20-60 min: 3s intervals
   intervalSeconds: z.number().min(1).max(30).optional(),
-  maxFrames: z.number().min(1).max(300).optional().default(200), // Allow up to 200 frames
+  maxFrames: z.number().min(1).max(300).optional().default(300), // Allow up to 300 frames (increased for 1s intervals)
   outputFormat: z.enum(['jpg', 'png']).optional().default('jpg'),
 });
 
-// Max video duration for vision processing (20 minutes)
-const MAX_VISION_DURATION_SECONDS = 20 * 60; // 1200 seconds
+// Max video duration for vision processing (60 minutes)
+const MAX_VISION_DURATION_SECONDS = 60 * 60; // 3600 seconds
 
 /**
  * Calculate optimal interval based on video duration
- * 0-5 min: 3s intervals
- * 5-10 min: 6s intervals
- * 10-20 min: 9s intervals
+ * 0-10 min: 1s intervals
+ * 10-20 min: 2s intervals
+ * 20-60 min: 3s intervals
  */
 function calculateOptimalInterval(durationSeconds: number): number {
-  if (durationSeconds <= 300) { // 0-5 min
+  if (durationSeconds <= 600) { // 0-10 min
+    return 1;
+  } else if (durationSeconds <= 1200) { // 10-20 min
+    return 2;
+  } else { // 20-60 min
     return 3;
-  } else if (durationSeconds <= 600) { // 5-10 min
-    return 6;
-  } else { // 10-20 min
-    return 9;
   }
 }
 
