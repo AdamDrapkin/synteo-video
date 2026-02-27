@@ -158,6 +158,10 @@ export async function handleExtractFrames(req: express.Request, res: express.Res
     let sourceType: 'youtube' | 'direct' | 'cached' = 'direct';
     let videoDuration: number;
 
+    // Create temp directory for frame extraction
+    const tempDir = path.join(os.tmpdir(), `frames-${Date.now()}`);
+    await fs.mkdir(tempDir, { recursive: true });
+
     // Check if using cached video or downloading fresh
     if (cacheKey) {
       // Use pre-cached video
