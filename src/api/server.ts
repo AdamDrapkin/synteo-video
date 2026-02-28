@@ -9,6 +9,7 @@ import {
   handleTrim,
   handleExtractFrames,
   handlePrepareVideo,
+  handleExtractAudio,
   handleTranscribe,
   handleListMusic,
   handleGetMusicStream,
@@ -130,6 +131,9 @@ app.post('/media/extract-frames', handleExtractFrames);
 
 // POST /media/prepare-video - Pre-download and cache video for parallel processing
 app.post('/media/prepare-video', handlePrepareVideo);
+
+// POST /media/extract-audio - Extract audio from video
+app.post('/media/extract-audio', handleExtractAudio);
 
 // POST /media/transcribe - Transcribe audio using Whisper
 app.post('/media/transcribe', handleTranscribe);
